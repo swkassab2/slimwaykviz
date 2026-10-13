@@ -1,11 +1,12 @@
 import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet, apiPost, apiDelete } from '../api';
-import { TEMP_BADGES, TEMP_COLORS } from '../config/qualify';
+import { TEMP_BADGES, TEMP_COLORS, EARLY_CLOSE_REASONS } from '../config/qualify';
 
 interface Session {
   id: string; consultant: string; status: string; current_step: number;
   temperature?: string; score?: number; created_at: string; completed_at?: string;
+  answers?: { closed_early?: { reason: string; comment?: string } };
 }
 
 const CONSULTANT_KEY = 'sw_consultant';
@@ -112,6 +113,11 @@ export default function HomePage() {
               <div>
                 <div style={{ fontWeight: 600 }}>{s.consultant}</div>
                 <div className="meta">{fmtDate(s.completed_at ?? s.created_at)}</div>
+                {s.answers?.closed_early && (
+                  <div className="meta" style={{ color: '#9ca3af' }}>
+                    Закрыта досрочно: {EARLY_CLOSE_REASONS.find(r => r.id === s.answers!.closed_early!.reason)?.label ?? s.answers.closed_early.reason}
+                  </div>
+                )}
               </div>
               {s.temperature && (
                 <span style={{ background: TEMP_COLORS[s.temperature], color: '#fff', padding: '4px 10px', borderRadius: 999, fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>

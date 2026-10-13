@@ -4,8 +4,8 @@ import { Answers } from '../config/qualify';
 
 const TONE_BORDER: Record<string, string> = { warning: '#f59e0b', stop: '#dc2626' };
 
-export default function ScriptItem({ script, answers, used, onMark }: {
-  script: Script; answers: Answers; used: boolean; onMark: (id: string) => void;
+export default function ScriptItem({ script, answers, used, onMark, readOnly }: {
+  script: Script; answers: Answers; used: boolean; onMark: (id: string) => void; readOnly?: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [fields, setFields] = useState<Record<string, string>>({});
@@ -40,9 +40,12 @@ export default function ScriptItem({ script, answers, used, onMark }: {
       <div className="script-text">{text}</div>
       <div className="script-actions">
         <button className="script-btn" onClick={copy}>{copied ? '✓ Скопировано' : 'Копировать'}</button>
-        <button className={`script-btn${used ? ' script-btn-used' : ''}`} onClick={() => onMark(script.id)}>
-          {used ? '✓ Сказал(а)' : 'Сказал(а)'}
-        </button>
+        {!readOnly && (
+          <button className={`script-btn${used ? ' script-btn-used' : ''}`} onClick={() => onMark(script.id)}>
+            {used ? '✓ Сказал(а)' : 'Сказал(а)'}
+          </button>
+        )}
+        {readOnly && used && <span className="script-btn script-btn-used">✓ Сказал(а)</span>}
       </div>
     </div>
   );

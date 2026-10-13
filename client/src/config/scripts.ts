@@ -1,6 +1,7 @@
 import {
   GOALS, TIMING_OPTIONS, SESSIONS_PER_WEEK_MIN, SESSIONS_PER_WEEK_MAX,
-  CONTRAINDICATIONS, Answers, A1, A2, A3, A4, A5, A7, A9,
+  CONTRAINDICATIONS, EXPERIENCE, WHY_NOW,
+  Answers, A1, A2, A3, A4, A6, A8, A9, A10, A11, A12,
 } from './qualify';
 
 export interface Script {
@@ -28,20 +29,24 @@ function seasonPhrase(): string {
 }
 
 export function fillScript(text: string, answers: Answers): string {
-  const a4 = answers[4] as A4 | undefined;
-  const a5 = answers[5] as A5 | undefined;
+  const a4  = answers[4]  as A4  | undefined;
+  const a6  = answers[6]  as A6  | undefined;
+  const a12 = answers[12] as A12 | undefined;
+
+  // backward compat: timing may be in step 5 for old sessions
+  const timingAns = a6 ?? (answers[5] as A6 | undefined);
 
   const eventMap: Record<string, string> = {
     birthday: 'ДР', wedding: 'свадьбы', vacation: 'отпуска', date: 'нужной даты',
   };
-  const event = eventMap[a5?.type ?? ''] ?? '';
+  const event = eventMap[timingAns?.type ?? ''] ?? '';
 
   let date = '';
   let weeks = 0;
   let sessions_min = 0;
   let sessions_max = 0;
-  if (a5?.date) {
-    const d = new Date(a5.date);
+  if (timingAns?.date) {
+    const d = new Date(timingAns.date);
     date = d.toLocaleDateString('ru-RU', { day: '2-digit', month: '2-digit' });
     const diffMs = d.getTime() - Date.now();
     weeks = Math.max(0, Math.floor(diffMs / (7 * 24 * 60 * 60 * 1000)));
@@ -52,6 +57,11 @@ export function fillScript(text: string, answers: Answers): string {
   const pain = GOALS.filter(g => (a4?.selected ?? []).includes(g.id)).map(g => g.label).join(', ');
   const goal_words = a4?.goal_words ?? '';
 
+  const visit_date  = a12?.visit_date ?? '';
+  const visit_time  = a12?.visit_time ?? '';
+  const callback_date = a12?.callback_date ?? '';
+  const callback_time = a12?.callback_time ?? '';
+
   return text
     .replace(/{event}/g, event)
     .replace(/{date}/g, date)
@@ -61,7 +71,11 @@ export function fillScript(text: string, answers: Answers): string {
     .replace(/{pain}/g, pain)
     .replace(/{goal_words}/g, goal_words)
     .replace(/{season_phrase}/g, seasonPhrase())
-    .replace(/\{[^}]+\}/g, '') // remove any leftover placeholders
+    .replace(/{visit_date}/g, visit_date)
+    .replace(/{visit_time}/g, visit_time)
+    .replace(/{callback_date}/g, callback_date)
+    .replace(/{callback_time}/g, callback_time)
+    .replace(/\{[^}]+\}/g, '')
     .replace(/\s{2,}/g, ' ')
     .trim();
 }
@@ -69,7 +83,7 @@ export function fillScript(text: string, answers: Answers): string {
 // ─── Helper conditions ────────────────────────────────────────────────────────
 const stopIds = new Set(CONTRAINDICATIONS.stop.map(c => c.id));
 const tempIds = new Set(CONTRAINDICATIONS.temporary.map(c => c.id));
-const attIds = new Set(CONTRAINDICATIONS.attention.map(c => c.id));
+const attIds  = new Set(CONTRAINDICATIONS.attention.map(c => c.id));
 
 function contrSel(a: Answers): string[] {
   const a3 = a[3] as A3 | undefined;
@@ -79,13 +93,13 @@ function contrSel(a: Answers): string[] {
 // ─── Scripts ──────────────────────────────────────────────────────────────────
 export const SCRIPTS: Script[] = [
 
-  // ── Step 1: Расстояние ───────────────────────────────────────────────────────
+  // ── Окно 1: Где живёт ────────────────────────────────────────────────────────
   {
     id: 's1_far',
     title: 'Далеко ехать',
     category: 'Окно',
     step: 1,
-    when: a => ['far', 'very_far'].includes((a[1] as A1 | undefined)?.value ?? ''),
+    when: a => ['far', 'very_far'].includes((a[1] as A1 | undefined)?.travel_time ?? (a[1] as any)?.value ?? ''),
     text: 'Сам сеанс — 30 минут, 2–3 раза в неделю. Многие ездят к нам с другого конца города: всё равно выходит быстрее, чем два часа в зале с дорогой и душем',
   },
   {
@@ -93,11 +107,27 @@ export const SCRIPTS: Script[] = [
     title: 'Рядом — удобно',
     category: 'Окно',
     step: 1,
-    when: a => ['near', 'medium'].includes((a[1] as A1 | undefined)?.value ?? ''),
+    when: a => ['near', 'medium'].includes((a[1] as A1 | undefined)?.travel_time ?? (a[1] as any)?.value ?? ''),
     text: 'Вам вообще рядом — удобно заходить до или после работы',
   },
+  {
+    id: 's1_car',
+    title: 'На машине — парковка',
+    category: 'Окно',
+    step: 1,
+    when: a => (a[1] as A1 | undefined)?.transport === 'car',
+    text: 'Парковка рядом есть — удобно заезжать по пути',
+  },
+  {
+    id: 's1_work',
+    title: 'С работы — удобно',
+    category: 'Окно',
+    step: 1,
+    when: a => (a[1] as A1 | undefined)?.from === 'work',
+    text: 'Многие заходят прямо после работы — 30 минут, и дальше по своим делам',
+  },
 
-  // ── Step 2: Возраст ──────────────────────────────────────────────────────────
+  // ── Окно 2: О клиенте ────────────────────────────────────────────────────────
   {
     id: 's2_older',
     title: 'После 45',
@@ -105,6 +135,14 @@ export const SCRIPTS: Script[] = [
     step: 2,
     when: a => ['46-55', '56+'].includes((a[2] as A2 | undefined)?.value ?? ''),
     text: 'После сорока пяти процесс действительно идёт иначе — метаболизм замедляется, и то, что работало раньше, перестаёт давать результат. Это про физиологию, а не про вас лично. Поэтому мы и не работаем одним аппаратом. Что беспокоит больше: общий вес или конкретные зоны?',
+  },
+  {
+    id: 's2_male',
+    title: 'Мужчина — живот',
+    category: 'Окно',
+    step: 2,
+    when: a => (a[2] as A2 | undefined)?.gender === 'male',
+    text: 'Для мужчин главная зона почти всегда живот — тут хорошо работает InfraStep, он даёт самую активную нагрузку',
   },
   {
     id: 's2_postpartum',
@@ -124,13 +162,13 @@ export const SCRIPTS: Script[] = [
     text: 'Не говорить «вернём прежнюю фигуру». Допуск: от 6 недель после естественных родов и от 8 после кесарева, только с разрешения врача',
   },
 
-  // ── Step 3: Противопоказания ─────────────────────────────────────────────────
+  // ── Окно 3: Противопоказания ─────────────────────────────────────────────────
   {
     id: 's3_attention',
     title: 'Есть особенности здоровья',
     category: 'Окно',
     step: 3,
-    when: a => !!(a[3] as A3 | undefined)?.none === false && contrSel(a).some(s => attIds.has(s)) && !contrSel(a).some(s => stopIds.has(s)),
+    when: a => !(a[3] as A3 | undefined)?.none && contrSel(a).some(s => attIds.has(s)) && !contrSel(a).some(s => stopIds.has(s)),
     text: 'Спасибо, что сказали. Это не повод не приходить: ударной нагрузки у нас нет, вы не бежите и не прыгаете. Вакуум и прогрев регулируются, вплоть до полного отключения. С такими особенностями у нас занимаются постоянно — посмотрим вместе на диагностике',
   },
   {
@@ -160,7 +198,7 @@ export const SCRIPTS: Script[] = [
     text: 'Спасибо, что предупредили. С этим аппаратные сеансы, к сожалению, нельзя — ваша безопасность для нас важнее. Если врач разрешит, будем очень рады вас видеть',
   },
 
-  // ── Step 4: Что хочет убрать ─────────────────────────────────────────────────
+  // ── Окно 4: Что хочет убрать ─────────────────────────────────────────────────
   {
     id: 's4_belly',
     title: 'Живот',
@@ -190,7 +228,7 @@ export const SCRIPTS: Script[] = [
     title: 'Целлюлит / тонус',
     category: 'Окно',
     step: 4,
-    when: a => ((a[4] as A4 | undefined)?.selected ?? []).includes('cellulite'),
+    when: a => ((a[4] as A4 | undefined)?.selected ?? []).includes('cellulite') || ((a[4] as A4 | undefined)?.selected ?? []).includes('edema'),
     text: 'Это как раз про RollShape — роликовый массаж после активной фазы: рельеф кожи, лёгкость в ногах. Его хорошо сочетать с активными аппаратами',
   },
   {
@@ -201,105 +239,288 @@ export const SCRIPTS: Script[] = [
     text: 'А есть одежда, которую хочется снова носить? Или событие, к которому хочется прийти в форму? (Запишите ответ дословно в поле «Своими словами»)',
   },
 
-  // ── Step 5: Сроки ────────────────────────────────────────────────────────────
+  // ── Окно 5: Почему сейчас ────────────────────────────────────────────────────
   {
-    id: 's5_date',
-    title: 'Есть конкретный срок',
+    id: 's5_clothes',
+    title: 'Одежда стала мала',
     category: 'Окно',
     step: 5,
-    when: a => { const a5 = a[5] as A5 | undefined; return !!(a5?.type && a5.type !== 'none' && a5.date); },
+    when: a => ((a[5] as { selected?: string[] } | undefined)?.selected ?? []).includes('clothes'),
+    text: 'Иногда дело даже не в весе. Важно открыть шкаф и надеть то, что хочется, а не то, что налезет',
+  },
+  {
+    id: 's5_mirror',
+    title: 'Не нравится отражение',
+    category: 'Окно',
+    step: 5,
+    when: a => ((a[5] as { selected?: string[] } | undefined)?.selected ?? []).includes('mirror'),
+    text: 'Важна не цифра, а разница в зеркале. И её видно раньше, чем цифру на весах',
+  },
+  {
+    id: 's5_health',
+    title: 'Самочувствие',
+    category: 'Окно',
+    step: 5,
+    when: a => ((a[5] as { selected?: string[] } | undefined)?.selected ?? []).includes('health'),
+    text: 'Результат будем смотреть не по ощущениям, а по цифрам — каждую неделю повторная диагностика',
+  },
+  {
+    id: 's5_winter',
+    title: 'Набрал(а) за зиму',
+    category: 'Окно',
+    step: 5,
+    when: a => ((a[5] as { selected?: string[] } | undefined)?.selected ?? []).includes('winter'),
+    text: 'У нас полгода зима, движения минимум — вес набирается сам собой. Начать сейчас проще, чем весной',
+  },
+  {
+    id: 's5_example',
+    title: 'Пример знакомых',
+    category: 'Окно',
+    step: 5,
+    when: a => ((a[5] as { selected?: string[] } | undefined)?.selected ?? []).includes('example'),
+    text: 'Здорово, когда видишь результат у знакомых — значит, и система понятна. На диагностике покажу, как это будет у вас',
+  },
+
+  // ── Окно 6: Сроки ────────────────────────────────────────────────────────────
+  {
+    id: 's6_date',
+    title: 'Есть конкретный срок',
+    category: 'Окно',
+    step: 6,
+    when: a => { const a6 = a[6] as A6 | undefined; return !!(a6?.type && a6.type !== 'none' && a6.date); },
     text: 'До {event} {weeks} нед. — это примерно {sessions_min}–{sessions_max} сеансов. Если начать на этой неделе — к {date} придёте уже с результатом. А «с понедельника» — в лучшем случае только начнёте',
   },
   {
-    id: 's5_tight',
+    id: 's6_strict',
+    title: 'Точная дата — не терять',
+    category: 'Окно',
+    step: 6,
+    when: a => (a[6] as A6 | undefined)?.deadline_flex === 'strict',
+    text: 'Раз дата не сдвинется, давайте не терять неделю — каждая неделя это ещё 2–3 сеанса',
+  },
+  {
+    id: 's6_tight',
     title: 'Очень мало времени',
     category: 'Окно',
-    step: 5,
+    step: 6,
     tone: 'warning',
     when: a => {
-      const a5 = a[5] as A5 | undefined;
-      if (!a5?.date || a5.type === 'none') return false;
-      const w = Math.floor((new Date(a5.date).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000));
+      const a6 = a[6] as A6 | undefined;
+      if (!a6?.date || a6.type === 'none') return false;
+      const w = Math.floor((new Date(a6.date).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000));
       return w >= 0 && w < 2;
     },
     text: 'Времени немного, но начать всё равно стоит — давайте на диагностике посмотрим, что реально успеем к {date}',
   },
   {
-    id: 's5_no_date',
+    id: 's6_no_date',
     title: 'Без конкретного срока',
     category: 'Окно',
-    step: 5,
-    when: a => (a[5] as A5 | undefined)?.type === 'none',
+    step: 6,
+    when: a => (a[6] as A6 | undefined)?.type === 'none',
     text: '{season_phrase}',
   },
 
-  // ── Step 6: Параметры ────────────────────────────────────────────────────────
+  // ── Окно 7: Параметры ────────────────────────────────────────────────────────
   {
-    id: 's6_goal_weight',
+    id: 's7_goal_weight',
     title: 'Указан желаемый вес',
-    category: 'Окно',
-    step: 6,
-    when: a => {
-      const a6 = a[6] as { goal_weight?: unknown } | undefined;
-      return !!(a6?.goal_weight && Number(a6.goal_weight) > 0);
-    },
-    text: 'Важна не только цифра на весах. На диагностике увидим, сколько там жира, а сколько воды — часто объёмы уходят быстрее, чем вес',
-  },
-
-  // ── Step 7: Опыт ─────────────────────────────────────────────────────────────
-  {
-    id: 's7_tried',
-    title: 'Уже что-то пробовали',
     category: 'Окно',
     step: 7,
     when: a => {
-      const a7 = a[7] as A7 | undefined;
-      return !!(a7?.selected?.length) && !a7.selected.includes('nothing');
+      const a7 = a[7] as { goal_weight?: unknown } | undefined;
+      return !!(a7?.goal_weight && Number(a7.goal_weight) > 0);
+    },
+    text: 'Важна не только цифра на весах. На диагностике увидим, сколько там жира, а сколько воды — часто объёмы уходят быстрее, чем вес',
+  },
+  {
+    id: 's7_sedentary',
+    title: 'Сидячая работа',
+    category: 'Окно',
+    step: 7,
+    when: a => (a[7] as { lifestyle?: string } | undefined)?.lifestyle === 'sedentary',
+    text: 'При сидячей работе к вечеру часто тяжесть в ногах — это как раз задача для RollShape',
+  },
+  {
+    id: 's7_no_activity',
+    title: 'Активности нет',
+    category: 'Окно',
+    step: 7,
+    when: a => (a[7] as { activity?: string } | undefined)?.activity === 'none',
+    text: 'Ничего страшного — подготовка не нужна. Начнём с мягких стартовых настроек',
+  },
+  {
+    id: 's7_active',
+    title: 'Активность 3+',
+    category: 'Окно',
+    step: 7,
+    when: a => (a[7] as { activity?: string } | undefined)?.activity === '3+',
+    text: 'Отлично, база есть — можно сразу дать InfraStep, он самый интенсивный',
+  },
+
+  // ── Окно 8: Опыт ─────────────────────────────────────────────────────────────
+  {
+    id: 's8_tried',
+    title: 'Уже что-то пробовали',
+    category: 'Окно',
+    step: 8,
+    when: a => {
+      const a8 = a[8] as A8 | undefined;
+      return !!(a8?.selected?.length) && !a8.selected.includes('nothing');
     },
     text: 'Многие приходят с той же историей: пробовали, какое-то время получалось, потом всё возвращалось. Сомнение понимаю. Здесь подход другой: сначала смотрим ваши показатели, подбираем программу и отслеживаем изменения по цифрам. А что именно пробовали и почему, как думаете, не сработало?',
   },
   {
-    id: 's7_diet',
+    id: 's8_regained',
+    title: 'Вес вернулся',
+    category: 'Окно',
+    step: 8,
+    when: a => (a[8] as A8 | undefined)?.outcome === 'regained',
+    text: 'Так бывает почти у всех, кто худел резко. Мы не гоним темп — поэтому результат держится дольше',
+  },
+  {
+    id: 's8_diet',
     title: 'Пробовала диеты',
     category: 'Окно',
-    step: 7,
-    when: a => ((a[7] as A7 | undefined)?.selected ?? []).includes('diet'),
+    step: 8,
+    when: a => ((a[8] as A8 | undefined)?.selected ?? []).includes('diet'),
     text: 'Голодать и изводить себя здесь не нужно. Дело не в силе воли, а в системе — её мы и даём',
   },
   {
-    id: 's7_nothing',
-    title: 'Ничего не пробовала',
-    category: 'Окно',
-    step: 7,
-    when: a => ((a[7] as A7 | undefined)?.selected ?? []).includes('nothing'),
-    text: 'Отлично — значит, начнём сразу правильно: с диагностики и системы',
-  },
-
-  // ── Step 8: Удобное время ────────────────────────────────────────────────────
-  {
-    id: 's8_time',
-    title: 'График без переломов',
+    id: 's8_pills',
+    title: 'Таблетки, чаи',
     category: 'Окно',
     step: 8,
-    text: 'Сеанс — 30 минут, 2–3 раза в неделю. Подберём время, чтобы не ломать ваш график',
+    when: a => ((a[8] as A8 | undefined)?.selected ?? []).includes('pills'),
+    text: 'Здесь никаких таблеток — только работа тела и цифры, которые видно каждую неделю',
+  },
+  {
+    id: 's8_nothing',
+    title: 'Ничего не пробовала',
+    category: 'Окно',
+    step: 8,
+    when: a => ((a[8] as A8 | undefined)?.selected ?? []).includes('nothing'),
+    text: 'Отлично — значит, начнём сразу правильно: с диагностики и системы',
+  },
+  {
+    id: 's8_stress',
+    title: 'Ест на стрессе',
+    category: 'Окно',
+    step: 8,
+    when: a => !!(a[8] as A8 | undefined)?.stress_eating,
+    text: 'Это очень частая история — есть не от голода, а когда устала. Многие замечают, что после сеансов первым меняется настроение, а тянуть на еду становится меньше. И когда есть график и цель, срываться сложнее',
   },
 
-  // ── Step 9: Мотивация ────────────────────────────────────────────────────────
+  // ── Окно 9: Время и старт ────────────────────────────────────────────────────
   {
-    id: 's9_low',
-    title: 'Мотивация низкая (1–4)',
+    id: 's9_time',
+    title: 'График без переломов',
     category: 'Окно',
     step: 9,
-    when: a => { const v = (a[9] as A9 | undefined)?.value ?? 0; return v >= 1 && v <= 4; },
+    text: 'Сеанс — 30 минут, 2–3 раза в неделю. Подберём время, чтобы не ломать ваш график',
+  },
+  {
+    id: 's9_later',
+    title: 'Старт позже',
+    category: 'Окно',
+    step: 9,
+    when: a => (a[9] as A9 | undefined)?.start_when === 'later',
+    text: 'Давайте хотя бы диагностику сделаем сейчас — она бесплатная и недолгая. Начнёте, когда будете готовы, а цифры у вас уже будут',
+  },
+  {
+    id: 's9_this_week',
+    title: 'Готов(а) на этой неделе',
+    category: 'Окно',
+    step: 9,
+    when: a => (a[9] as A9 | undefined)?.start_when === 'this_week',
+    text: 'Отлично, тогда давайте сразу подберём время — завтра или послезавтра?',
+  },
+
+  // ── Окно 10: Мотивация и решение ─────────────────────────────────────────────
+  {
+    id: 's10_low',
+    title: 'Мотивация низкая (1–4)',
+    category: 'Окно',
+    step: 10,
+    when: a => { const v = (a[10] as A10 | undefined)?.value ?? 0; return v >= 1 && v <= 4; },
     text: 'Давайте без обязательств: просто приходите на бесплатную диагностику — узнаете свои цифры, попробуете аппараты, а решать будете потом',
   },
   {
-    id: 's9_high',
+    id: 's10_high',
     title: 'Мотивация высокая (8–10)',
     category: 'Окно',
-    step: 9,
-    when: a => { const v = (a[9] as A9 | undefined)?.value ?? 0; return v >= 8; },
+    step: 10,
+    when: a => { const v = (a[10] as A10 | undefined)?.value ?? 0; return v >= 8; },
     text: 'Тогда не будем откладывать — давайте подберём время на этой неделе',
+  },
+  {
+    id: 's10_family',
+    title: 'Посоветоваться с семьёй',
+    category: 'Окно',
+    step: 10,
+    when: a => (a[10] as A10 | undefined)?.decision === 'family',
+    text: 'Конечно, посоветуйтесь. А приходите на диагностику вместе — вдвоём увидите цифры, попробуете аппараты и решите',
+  },
+
+  // ── Окно 11: Откуда узнали ───────────────────────────────────────────────────
+  {
+    id: 's11_reviews',
+    title: 'Отзывы',
+    category: 'Окно',
+    step: 11,
+    when: a => ((a[11] as A11 | undefined)?.what_caught ?? []).includes('reviews'),
+    text: 'Отзывы — это хорошо, но лучше увидеть свои цифры. Диагностика бесплатная',
+  },
+  {
+    id: 's11_results',
+    title: 'Результаты до/после',
+    category: 'Окно',
+    step: 11,
+    when: a => ((a[11] as A11 | undefined)?.what_caught ?? []).includes('results'),
+    text: 'На визите покажу настоящие листы замеров — с датами, от руки',
+  },
+  {
+    id: 's11_was_before',
+    title: 'Был(а) раньше',
+    category: 'Окно',
+    step: 11,
+    when: a => !!(a[11] as A11 | undefined)?.was_before,
+    text: 'Рады, что вернулись! Подскажите, что тогда помешало продолжить — чтобы в этот раз сделать удобнее',
+  },
+
+  // ── Окно 12: Итог звонка ─────────────────────────────────────────────────────
+  {
+    id: 's12_booked',
+    title: 'Записан(а)',
+    category: 'Окно',
+    step: 12,
+    when: a => (a[12] as A12 | undefined)?.outcome === 'booked',
+    text: 'Записала вас на {visit_date} в {visit_time}. Адрес: ул. Ахмета Байтурсынова, 2, ЖК Qazyna, НП14. Возьмите сменную обувь — в бахилах на аппараты нельзя, полотенце и удобную одежду, лучше прилегающую к телу — так прогрев работает в полную силу. И желательно не плотно есть прямо перед диагностикой',
+  },
+  {
+    id: 's12_callback',
+    title: 'Перезвонить',
+    category: 'Окно',
+    step: 12,
+    when: a => (a[12] as A12 | undefined)?.outcome === 'callback',
+    text: 'Хорошо, наберу вас {callback_date} в {callback_time}. Удобно?',
+  },
+  {
+    id: 's12_thinking',
+    title: 'Подумает',
+    category: 'Окно',
+    step: 12,
+    when: a => (a[12] as A12 | undefined)?.outcome === 'thinking',
+    text: 'Конечно, подумайте. Я напишу вам {callback_date} — если появятся вопросы, пишите в любое время',
+  },
+  {
+    id: 's12_refused',
+    title: 'Отказ — не дожимать',
+    category: 'Окно',
+    step: 12,
+    tone: 'warning',
+    when: a => (a[12] as A12 | undefined)?.outcome === 'refused',
+    text: 'Не дожимать. Поблагодарить и оставить дверь открытой: "Если надумаете — бесплатная диагностика остаётся за вами"',
   },
 
   // ── Панель: Открытие ─────────────────────────────────────────────────────────

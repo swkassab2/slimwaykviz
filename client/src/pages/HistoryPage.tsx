@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { apiGet } from '../api';
-import { TEMP_BADGES, TEMP_COLORS } from '../config/qualify';
+import { TEMP_BADGES, TEMP_COLORS, EARLY_CLOSE_REASONS } from '../config/qualify';
 
 interface Session {
   id: string; consultant: string; status: string;
   temperature?: string; score?: number; created_at: string; completed_at?: string;
+  answers?: { closed_early?: { reason: string; comment?: string } };
 }
 
 const TEMPERATURES = [
@@ -65,7 +66,7 @@ export default function HistoryPage() {
       </div>
 
       {all.map(s => (
-        <div key={s.id} className="session-card" onClick={() => navigate(`/q/${s.id}/summary`)}>
+        <div key={s.id} className="session-card" onClick={() => navigate(s.status === 'draft' ? `/q/${s.id}/${1}` : `/q/${s.id}/summary`)}>
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               {s.temperature && (
@@ -79,6 +80,11 @@ export default function HistoryPage() {
               {s.temperature && ` · ${TEMP_BADGES[s.temperature]}`}
               {s.score !== undefined && s.score !== null ? ` · ${s.score} пт` : ''}
             </div>
+            {s.answers?.closed_early && (
+              <div className="meta" style={{ color: '#9ca3af' }}>
+                Закрыта досрочно: {EARLY_CLOSE_REASONS.find(r => r.id === s.answers!.closed_early!.reason)?.label ?? s.answers.closed_early.reason}
+              </div>
+            )}
           </div>
           <span style={{ color: '#c4c9d4', fontSize: 20 }}>›</span>
         </div>

@@ -50,6 +50,8 @@ sessionsRouter.get('/api/sessions/:id', async (req, res) => {
 sessionsRouter.patch('/api/sessions/:id', async (req, res) => {
   const db = sb();
   if (!db) { res.status(500).json({ error: 'Supabase not configured' }); return; }
+  const { data: curr } = await db.from('qualify_sessions').select('status').eq('id', req.params.id).single();
+  if (curr?.status === 'done') { res.status(409).json({ error: 'Квалификация закрыта, только просмотр' }); return; }
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (req.body.answers !== undefined) update.answers = req.body.answers;
   if (req.body.current_step !== undefined) update.current_step = req.body.current_step;
@@ -63,9 +65,9 @@ sessionsRouter.post('/api/sessions/:id/complete', async (req, res) => {
   const db = sb();
   if (!db) { res.status(500).json({ error: 'Supabase not configured' }); return; }
   const { score, temperature, bmi, weeks_left, sessions_possible, recommendation, summary_text } = req.body;
-  // Preserve completed_at if already done
   const { data: curr } = await db.from('qualify_sessions').select('status, completed_at').eq('id', req.params.id).single();
-  const completedAt = curr?.status === 'done' ? curr.completed_at : new Date().toISOString();
+  if (curr?.status === 'done') { res.status(409).json({ error: 'Квалификация закрыта, только просмотр' }); return; }
+  const completedAt = new Date().toISOString();
   const { data, error } = await db
     .from('qualify_sessions')
     .update({ status: 'done', score, temperature, bmi, weeks_left, sessions_possible, recommendation, summary_text,
