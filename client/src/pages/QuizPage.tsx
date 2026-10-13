@@ -2,10 +2,14 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { apiGet, apiPatch } from '../api';
 import {
-  STEP_TITLES, STEP_CONFIG, DISTANCES, AGE_GROUPS, CONTRAINDICATIONS, GOALS, TIMING_OPTIONS,
-  EXPERIENCE, TIME_SLOTS, SOURCES, SESSIONS_PER_WEEK,
+  STEP_TITLES, STEP_CONFIG, DISTANCES, AGE_GROUPS, POSTPARTUM_PERIODS, CONTRAINDICATIONS,
+  GOALS, TIMING_OPTIONS, EXPERIENCE, TIME_SLOTS, SOURCES,
+  SESSIONS_PER_WEEK_MIN, SESSIONS_PER_WEEK_MAX,
   A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, Answers,
 } from '../config/qualify';
+import { SCRIPTS } from '../config/scripts';
+import ScriptItem from '../components/ScriptItem';
+import QuickReplies from '../components/QuickReplies';
 
 // ─── Progress bar ─────────────────────────────────────────────────────────────
 function ProgressBar({ current, maxVisited, id }: { current: number; maxVisited: number; id: string }) {
@@ -20,6 +24,23 @@ function ProgressBar({ current, maxVisited, id }: { current: number; maxVisited:
         >
           {n}
         </div>
+      ))}
+    </div>
+  );
+}
+
+// ─── Step scripts card ────────────────────────────────────────────────────────
+function StepScripts({ step, answers, usedScripts, onMark }: {
+  step: number; answers: Answers; usedScripts: string[]; onMark: (id: string) => void;
+}) {
+  const scripts = SCRIPTS.filter(s => s.step === step && (!s.when || s.when(answers)));
+  if (!scripts.length) return null;
+  return (
+    <div className="scripts-card">
+      <h4>💬 Что сказать</h4>
+      {scripts.map(s => (
+        <ScriptItem key={s.id} script={s} answers={answers}
+          used={usedScripts.includes(s.id)} onMark={onMark} />
       ))}
     </div>
   );
@@ -41,21 +62,50 @@ function Step1({ answer, onChange }: { answer?: A1; onChange: (v: A1) => void })
 
 // ─── Step 2: Age ──────────────────────────────────────────────────────────────
 function Step2({ answer, onChange }: { answer?: A2; onChange: (v: A2) => void }) {
+  const a: A2 = answer ?? { value: '' };
   return (
     <>
-      {answer?.value === 'under18' && (
+      {a.value === 'under18' && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
           Нужно присутствие/согласие родителя
         </div>
       )}
       <div className="options">
         {AGE_GROUPS.map((g, i) => (
-          <button key={g.id} className={`option-btn ${answer?.value === g.id ? 'selected' : ''}`}
-            onClick={() => onChange({ value: g.id })}>
+          <button key={g.id} className={`option-btn ${a.value === g.id ? 'selected' : ''}`}
+            onClick={() => onChange({ ...a, value: g.id })}>
             <span style={{ opacity: .45, marginRight: 8 }}>{i + 1}.</span>{g.label}
           </button>
         ))}
       </div>
+
+      <div className="field" style={{ marginTop: 16 }}>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+          <input type="checkbox" checked={!!a.postpartum}
+            onChange={e => onChange({ ...a, postpartum: e.target.checked, postpartum_period: undefined, breastfeeding: false })} />
+          После родов
+        </label>
+      </div>
+
+      {a.postpartum && (
+        <>
+          <div className="options" style={{ marginTop: 10 }}>
+            {POSTPARTUM_PERIODS.map(p => (
+              <button key={p.id} className={`option-btn ${a.postpartum_period === p.id ? 'selected' : ''}`}
+                onClick={() => onChange({ ...a, postpartum_period: p.id as A2['postpartum_period'] })}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+          <div className="field" style={{ marginTop: 10 }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }}>
+              <input type="checkbox" checked={!!a.breastfeeding}
+                onChange={e => onChange({ ...a, breastfeeding: e.target.checked })} />
+              Грудное вскармливание
+            </label>
+          </div>
+        </>
+      )}
     </>
   );
 }
@@ -148,6 +198,12 @@ function Step4({ answer, onChange }: { answer?: A4; onChange: (v: A4) => void })
           onChange={e => onChange({ ...a, other: e.target.value })}
           placeholder="Что-то ещё?" />
       </div>
+      <div className="field" style={{ marginTop: 8 }}>
+        <label>Своими словами — дословно</label>
+        <input type="text" value={a.goal_words ?? ''}
+          onChange={e => onChange({ ...a, goal_words: e.target.value })}
+          placeholder="Что клиент сказал о своей цели…" />
+      </div>
     </>
   );
 }
@@ -159,11 +215,13 @@ function Step5({ answer, onChange }: { answer?: A5; onChange: (v: A5) => void })
   const needsDate = a.type && a.type !== 'none';
 
   let weeksLeft = 0;
-  let sessionsPossible = 0;
+  let sessionsMin = 0;
+  let sessionsMax = 0;
   if (a.date) {
     const diff = new Date(a.date).getTime() - Date.now();
     weeksLeft = Math.max(0, Math.floor(diff / (7 * 24 * 60 * 60 * 1000)));
-    sessionsPossible = weeksLeft * SESSIONS_PER_WEEK;
+    sessionsMin = weeksLeft * SESSIONS_PER_WEEK_MIN;
+    sessionsMax = weeksLeft * SESSIONS_PER_WEEK_MAX;
   }
 
   return (
@@ -185,7 +243,7 @@ function Step5({ answer, onChange }: { answer?: A5; onChange: (v: A5) => void })
           </div>
           {a.date && weeksLeft >= 0 && (
             <div className="alert alert-info" style={{ marginTop: 8 }}>
-              До даты {weeksLeft} {plural(weeksLeft, 'неделя', 'недели', 'недель')} — успеем около {sessionsPossible} сеансов
+              До даты {weeksLeft} {plural(weeksLeft, 'неделя', 'недели', 'недель')} — ~{sessionsMin}–{sessionsMax} сеансов
             </div>
           )}
           {a.date && weeksLeft < 2 && (
@@ -341,7 +399,12 @@ function canProceed(step: number, answers: Answers): boolean {
   const a = answers[step] as Record<string, unknown> | undefined;
   switch (step) {
     case 1: return !!(a as A1 | undefined)?.value;
-    case 2: return !!(a as A2 | undefined)?.value;
+    case 2: {
+      const c = a as A2 | undefined;
+      if (!c?.value) return false;
+      if (c.postpartum && !c.postpartum_period) return false;
+      return true;
+    }
     case 3: {
       const c = a as A3 | undefined;
       return !!(c?.none || (c?.selected?.length ?? 0) > 0);
@@ -416,6 +479,14 @@ export default function QuizPage() {
     autoSave(next);
   }
 
+  function markScript(scriptId: string) {
+    const current = answers.used_scripts ?? [];
+    const next = current.includes(scriptId) ? current.filter(s => s !== scriptId) : [...current, scriptId];
+    const newAnswers = { ...answers, used_scripts: next };
+    setAnswers(newAnswers);
+    autoSave(newAnswers);
+  }
+
   function goNext() {
     if (!canProceed(stepNum, answers)) return;
     if (fromSummary || stepNum === 10) navigate(`/q/${id}/summary`);
@@ -437,7 +508,6 @@ export default function QuizPage() {
       if (isNaN(n) || n < 1) return;
       const opts = SINGLE_SELECT_OPTIONS[stepNum];
       if (opts && n <= opts.length) update({ value: opts[n - 1].id });
-      // Step 9: 1-9 map to motivation values
       if (stepNum === 9 && n >= 1 && n <= 9) update({ value: n });
     }
     window.addEventListener('keydown', onKey);
@@ -447,6 +517,7 @@ export default function QuizPage() {
   const proceed = canProceed(stepNum, answers);
   const isSkippable = STEP_CONFIG[stepNum - 1]?.skippable;
   const isSkipped = stepNum === 6 && !!(answers[6] as A6 | undefined)?.skipped;
+  const usedScripts = answers.used_scripts ?? [];
 
   function skip() {
     update({ skipped: true, height: '', weight: '', goal_weight: '' } as A6);
@@ -473,6 +544,8 @@ export default function QuizPage() {
         {stepNum === 8 && <Step8 answer={answers[8] as A8} onChange={update} />}
         {stepNum === 9 && <Step9 answer={answers[9] as A9} onChange={update} />}
         {stepNum === 10 && <Step10 answer={answers[10] as A10} onChange={update} />}
+
+        <StepScripts step={stepNum} answers={answers} usedScripts={usedScripts} onMark={markScript} />
       </div>
 
       <div className="nav-btns">
@@ -488,6 +561,8 @@ export default function QuizPage() {
           {stepNum === 10 || fromSummary ? 'Итог →' : 'Далее →'}
         </button>
       </div>
+
+      <QuickReplies answers={answers} usedScripts={usedScripts} onMark={markScript} />
     </div>
   );
 }

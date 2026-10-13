@@ -1,25 +1,43 @@
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
-import { apiGet, apiPost } from '../api';
+import { apiGet, apiPatch, apiPost } from '../api';
 import {
   TEMP_BADGES, TEMP_COLORS, TEMP_TIPS, STEP_TITLES,
-  DISTANCES, AGE_GROUPS, CONTRAINDICATIONS, GOALS, TIMING_OPTIONS,
+  DISTANCES, AGE_GROUPS, POSTPARTUM_PERIODS, CONTRAINDICATIONS, GOALS, TIMING_OPTIONS,
   EXPERIENCE, TIME_SLOTS, SOURCES,
   A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, Answers,
   computeResult, buildSummaryText,
 } from '../config/qualify';
+import { SCRIPTS } from '../config/scripts';
+import ScriptItem from '../components/ScriptItem';
+import QuickReplies from '../components/QuickReplies';
 
 interface Session {
   id: string; consultant: string; status: string; answers: Answers;
   score?: number; temperature?: string; bmi?: number; summary_text?: string;
 }
 
+// Scripts to show by temperature
+const TEMP_SCRIPT_IDS: Record<string, string[]> = {
+  hot:      ['close_choice', 'close_goal'],
+  warm:     ['close_choice', 'close_goal'],
+  cold:     ['s9_low'],
+  stop:     ['s3_stop'],
+  postpone: ['s3_temp'],
+};
+
 function getAnswerLabel(step: number, answers: Answers): string {
   const a = answers[step];
   if (!a) return '—';
   switch (step) {
     case 1: return DISTANCES.find(d => d.id === (a as A1).value)?.label ?? '—';
-    case 2: return AGE_GROUPS.find(g => g.id === (a as A2).value)?.label ?? '—';
+    case 2: {
+      const c = a as A2;
+      const age = AGE_GROUPS.find(g => g.id === c.value)?.label ?? '—';
+      if (!c.postpartum) return age;
+      const period = POSTPARTUM_PERIODS.find(p => p.id === c.postpartum_period)?.label ?? '';
+      return `${age}, после родов${period ? ': ' + period : ''}${c.breastfeeding ? ', ГВ' : ''}`;
+    }
     case 3: {
       const c = a as A3;
       if (c.none) return 'Противопоказаний нет';
@@ -32,6 +50,7 @@ function getAnswerLabel(step: number, answers: Answers): string {
       const g = a as A4;
       const labels = GOALS.filter(x => g.selected.includes(x.id)).map(x => x.label);
       if (g.other) labels.push(g.other);
+      if (g.goal_words) labels.push(`«${g.goal_words}»`);
       return labels.join(', ') || '—';
     }
     case 5: {
@@ -67,7 +86,6 @@ export default function SummaryPage() {
   const [saving, setSaving] = useState(false);
   const [savedOk, setSavedOk] = useState(false);
 
-  // Re-fetch whenever we return to this page (e.g., after editing a step)
   useEffect(() => {
     if (!id) return;
     apiGet(`/api/sessions/${id}`).then(setSession);
@@ -76,14 +94,19 @@ export default function SummaryPage() {
   if (!session) return <div className="page">Загрузка…</div>;
 
   const answers = session.answers ?? {};
-  // Always compute fresh so edits are reflected immediately
   const result = computeResult(answers);
   const summaryText = buildSummaryText(answers, result);
+  const a4 = answers[4] as A4 | undefined;
   const a5 = answers[5] as A5 | undefined;
   const a6 = answers[6] as A6 | undefined;
   const paramsSkipped = !!a6?.skipped;
   const isDone = session.status === 'done';
   const color = TEMP_COLORS[result.temperature] ?? '#6b7280';
+  const usedScripts = answers.used_scripts ?? [];
+
+  const closingScripts = SCRIPTS.filter(s =>
+    TEMP_SCRIPT_IDS[result.temperature]?.includes(s.id) && (!s.when || s.when(answers))
+  );
 
   function editStep(n: number) {
     navigate(`/q/${id}/${n}?back=summary`);
@@ -120,9 +143,17 @@ export default function SummaryPage() {
     }
   }
 
+  async function markScript(scriptId: string) {
+    const current = answers.used_scripts ?? [];
+    const next = current.includes(scriptId) ? current.filter(s => s !== scriptId) : [...current, scriptId];
+    const newAnswers = { ...answers, used_scripts: next };
+    setSession(prev => prev ? { ...prev, answers: newAnswers } : prev);
+    await apiPatch(`/api/sessions/${id}`, { answers: newAnswers });
+  }
+
   return (
     <div className="page">
-      {/* Header with back button */}
+      {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
         <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={goBack}>
           ← Назад
@@ -137,6 +168,17 @@ export default function SummaryPage() {
         </div>
         <div style={{ color: '#6b7280', fontSize: 14, marginTop: 4 }}>Счёт: {result.score} баллов</div>
       </div>
+
+      {/* What to say now */}
+      {closingScripts.length > 0 && (
+        <div className="summary-section" style={{ borderLeft: `4px solid ${color}` }}>
+          <h3>💬 Что сказать сейчас</h3>
+          {closingScripts.map(s => (
+            <ScriptItem key={s.id} script={s} answers={answers}
+              used={usedScripts.includes(s.id)} onMark={markScript} />
+          ))}
+        </div>
+      )}
 
       {/* Consultant tip */}
       <div className="summary-section" style={{ borderLeft: `4px solid ${color}` }}>
@@ -155,6 +197,19 @@ export default function SummaryPage() {
               </span>
             ))}
           </div>
+          <p style={{ fontSize: 13, color: '#6b7280', marginTop: 8 }}>
+            {result.format_recommendation}
+            <br />
+            <span style={{ opacity: .7 }}>Окончательно — после диагностики и пробной</span>
+          </p>
+        </div>
+      )}
+
+      {/* Goal words */}
+      {a4?.goal_words && (
+        <div className="summary-section">
+          <h3>Своими словами</h3>
+          <p style={{ fontSize: 15, fontStyle: 'italic', color: '#1a1a2e' }}>«{a4.goal_words}»</p>
         </div>
       )}
 
@@ -165,7 +220,7 @@ export default function SummaryPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8, marginTop: 4 }}>
             <Stat label="Дата" value={new Date(a5.date).toLocaleDateString('ru-RU')} />
             <Stat label="Недель" value={String(result.weeks_left)} />
-            <Stat label="Сеансов" value={`~${result.sessions_possible}`} />
+            <Stat label="Сеансов" value={`~${result.sessions_min}–${result.sessions_possible}`} />
           </div>
         </div>
       )}
@@ -199,7 +254,7 @@ export default function SummaryPage() {
         </div>
       )}
 
-      {/* All answers — always editable */}
+      {/* All answers */}
       <div className="summary-section">
         <h3>Все ответы</h3>
         {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
@@ -223,6 +278,8 @@ export default function SummaryPage() {
           {isDone ? '← Главная' : 'Главная'}
         </button>
       </div>
+
+      <QuickReplies answers={answers} usedScripts={usedScripts} onMark={markScript} />
     </div>
   );
 }
