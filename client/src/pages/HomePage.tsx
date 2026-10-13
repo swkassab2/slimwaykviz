@@ -6,6 +6,7 @@ import { TEMP_BADGES, TEMP_COLORS, EARLY_CLOSE_REASONS } from '../config/qualify
 interface Session {
   id: string; consultant: string; status: string; current_step: number;
   temperature?: string; score?: number; created_at: string; completed_at?: string;
+  client_name?: string; client_phone?: string;
   answers?: { closed_early?: { reason: string; comment?: string } };
 }
 
@@ -93,7 +94,8 @@ export default function HomePage() {
           {drafts.map(s => (
             <div key={s.id} className="session-card" onClick={() => navigate(`/q/${s.id}/${s.current_step}`)}>
               <div>
-                <div style={{ fontWeight: 600 }}>{s.consultant}</div>
+                <div style={{ fontWeight: 600 }}>{s.client_name ?? s.consultant}</div>
+                {s.client_name && <div style={{ fontSize: 13, color: '#6b7280' }}>{s.consultant}</div>}
                 <div className="meta">Шаг {s.current_step} · {fmtDate(s.created_at)}</div>
               </div>
               <button className="btn btn-danger" style={{ fontSize: 13, padding: '6px 12px' }}
@@ -111,7 +113,8 @@ export default function HomePage() {
           {done.map(s => (
             <div key={s.id} className="session-card" onClick={() => navigate(`/q/${s.id}/summary`)}>
               <div>
-                <div style={{ fontWeight: 600 }}>{s.consultant}</div>
+                <div style={{ fontWeight: 600 }}>{s.client_name ?? 'Без имени'}</div>
+                <div style={{ fontSize: 13, color: '#6b7280' }}>{s.consultant}</div>
                 <div className="meta">{fmtDate(s.completed_at ?? s.created_at)}</div>
                 {s.answers?.closed_early && (
                   <div className="meta" style={{ color: '#9ca3af' }}>

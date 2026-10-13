@@ -10,10 +10,10 @@ import {
   TIME_SLOTS, START_WHEN, DECISION, SOURCES, WHAT_CAUGHT,
   CALL_OUTCOMES, REFUSAL_REASONS,
   TEMP_BADGES, TEMP_COLORS, MAX_SCORE,
-  A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, Answers,
+  A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, Answers,
   computeResult, buildSummaryText,
 } from '../config/qualify';
-import { SCRIPTS } from '../config/scripts';
+import { getStepCards, normalizePhone } from '../config/scripts';
 import ScriptItem from '../components/ScriptItem';
 import QuickReplies from '../components/QuickReplies';
 import AskPanel from '../components/AskPanel';
@@ -27,7 +27,7 @@ function ProgressBar({ current, maxVisited, id, readOnly }: {
   const navigate = useNavigate();
   return (
     <div className="progress-bar">
-      {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+      {Array.from({ length: 13 }, (_, i) => i + 1).map(n => (
         <div
           key={n}
           className={`progress-step ${n === current ? 'current' : n <= maxVisited ? 'done' : ''}`}
@@ -36,23 +36,6 @@ function ProgressBar({ current, maxVisited, id, readOnly }: {
         >
           {n}
         </div>
-      ))}
-    </div>
-  );
-}
-
-// ─── Step scripts inline card ─────────────────────────────────────────────────
-function StepScripts({ step, answers, usedScripts, onMark, readOnly }: {
-  step: number; answers: Answers; usedScripts: string[]; onMark: (id: string) => void; readOnly?: boolean;
-}) {
-  const scripts = SCRIPTS.filter(s => s.step === step && (!s.when || s.when(answers)));
-  if (!scripts.length) return null;
-  return (
-    <div className="scripts-card">
-      <h4>💬 Что сказать</h4>
-      {scripts.map(s => (
-        <ScriptItem key={s.id} script={s} answers={answers}
-          used={usedScripts.includes(s.id)} onMark={onMark} readOnly={readOnly} />
       ))}
     </div>
   );
@@ -69,7 +52,51 @@ function OptBtn({ label, selected, onClick, disabled }: {
   );
 }
 
-// ─── Step 1: Где живёт ────────────────────────────────────────────────────────
+// ─── Step 0 (UI 1): Клиент ────────────────────────────────────────────────────
+function StepClient({ answer, onChange, ro, dupWarn }: {
+  answer?: A0; onChange: (v: A0) => void; ro?: boolean; dupWarn?: string;
+}) {
+  const a: A0 = answer ?? { name: '', phone: '' };
+  const [phoneError, setPhoneError] = useState('');
+
+  function handlePhone(raw: string) {
+    onChange({ ...a, phone: raw });
+    setPhoneError('');
+  }
+
+  function handlePhoneBlur() {
+    if (!a.phone) { setPhoneError(''); return; }
+    const norm = normalizePhone(a.phone);
+    if (!norm) setPhoneError('Проверьте номер');
+    else { onChange({ ...a, phone: norm }); setPhoneError(''); }
+  }
+
+  return (
+    <>
+      <div className="field">
+        <label>Имя</label>
+        <input type="text" value={a.name} disabled={ro}
+          onChange={e => onChange({ ...a, name: e.target.value })}
+          placeholder="Как к вам обращаться?" />
+      </div>
+      <div className="field" style={{ marginTop: 12 }}>
+        <label>Телефон WhatsApp</label>
+        <input type="tel" value={a.phone ?? ''} disabled={ro}
+          onChange={e => handlePhone(e.target.value)}
+          onBlur={handlePhoneBlur}
+          placeholder="+7 7XX XXX-XX-XX" />
+        {phoneError && (
+          <div className="alert alert-warn" style={{ marginTop: 6, fontSize: 13 }}>{phoneError}</div>
+        )}
+      </div>
+      {dupWarn && (
+        <div className="alert alert-warn" style={{ marginTop: 10, fontSize: 13 }}>{dupWarn}</div>
+      )}
+    </>
+  );
+}
+
+// ─── Step 1 (UI 2): Где живёт ─────────────────────────────────────────────────
 function Step1({ answer, onChange, ro }: { answer?: A1; onChange: (v: A1) => void; ro?: boolean }) {
   const a: A1 = answer ?? { travel_time: '' };
   const set = (k: keyof A1, v: string) => onChange({ ...a, [k]: v });
@@ -113,7 +140,7 @@ function Step1({ answer, onChange, ro }: { answer?: A1; onChange: (v: A1) => voi
   );
 }
 
-// ─── Step 2: О клиенте ────────────────────────────────────────────────────────
+// ─── Step 2 (UI 3): О клиенте ─────────────────────────────────────────────────
 function Step2({ answer, onChange, ro }: { answer?: A2; onChange: (v: A2) => void; ro?: boolean }) {
   const a: A2 = answer ?? { value: '' };
   return (
@@ -124,11 +151,6 @@ function Step2({ answer, onChange, ro }: { answer?: A2; onChange: (v: A2) => voi
             onClick={() => !ro && onChange({ ...a, gender: g.id })} disabled={ro}>{g.label}</button>
         ))}
       </div>
-      {a.gender === 'under18' && (
-        <div className="alert alert-warn" style={{ marginTop: 12 }}>
-          Нужно присутствие/согласие родителя
-        </div>
-      )}
       <div className="options" style={{ marginTop: 12 }}>
         {AGE_GROUPS.map((g, i) => (
           <button key={g.id} className={`option-btn ${a.value === g.id ? 'selected' : ''}`}
@@ -137,7 +159,7 @@ function Step2({ answer, onChange, ro }: { answer?: A2; onChange: (v: A2) => voi
           </button>
         ))}
       </div>
-      {a.value === 'under18' && (
+      {(a.value === 'under18' || a.gender === 'under18') && (
         <div className="alert alert-warn" style={{ marginTop: 8 }}>Нужно присутствие/согласие родителя</div>
       )}
       <div className="field" style={{ marginTop: 16 }}>
@@ -170,7 +192,7 @@ function Step2({ answer, onChange, ro }: { answer?: A2; onChange: (v: A2) => voi
   );
 }
 
-// ─── Step 3: Противопоказания ─────────────────────────────────────────────────
+// ─── Step 3 (UI 4): Противопоказания ──────────────────────────────────────────
 function Step3({ answer, onChange, ro }: { answer?: A3; onChange: (v: A3) => void; ro?: boolean }) {
   const a: A3 = answer ?? { selected: [], none: false, other: '' };
   const stopIds = new Set(CONTRAINDICATIONS.stop.map(c => c.id));
@@ -226,7 +248,7 @@ function Step3({ answer, onChange, ro }: { answer?: A3; onChange: (v: A3) => voi
   );
 }
 
-// ─── Step 4: Что хочет убрать ─────────────────────────────────────────────────
+// ─── Step 4 (UI 5): Что хочет убрать ──────────────────────────────────────────
 function Step4({ answer, onChange, ro }: { answer?: A4; onChange: (v: A4) => void; ro?: boolean }) {
   const a: A4 = answer ?? { selected: [] };
   function toggle(id: string) {
@@ -273,7 +295,7 @@ function Step4({ answer, onChange, ro }: { answer?: A4; onChange: (v: A4) => voi
   );
 }
 
-// ─── Step 5: Почему сейчас ────────────────────────────────────────────────────
+// ─── Step 5 (UI 6): Почему сейчас ─────────────────────────────────────────────
 function Step5({ answer, onChange, ro }: { answer?: A5; onChange: (v: A5) => void; ro?: boolean }) {
   const a: A5 = answer ?? { selected: [] };
   function toggle(id: string) {
@@ -300,7 +322,7 @@ function Step5({ answer, onChange, ro }: { answer?: A5; onChange: (v: A5) => voi
   );
 }
 
-// ─── Step 6: Сроки ────────────────────────────────────────────────────────────
+// ─── Step 6 (UI 7): Сроки ──────────────────────────────────────────────────────
 function Step6({ answer, onChange, ro }: { answer?: A6; onChange: (v: A6) => void; ro?: boolean }) {
   const a: A6 = answer ?? { type: '', date: '' };
   const today = new Date().toISOString().split('T')[0];
@@ -356,7 +378,13 @@ function Step6({ answer, onChange, ro }: { answer?: A6; onChange: (v: A6) => voi
   );
 }
 
-// ─── Step 7: Параметры ────────────────────────────────────────────────────────
+// ─── Step 7 (UI 8): Параметры ──────────────────────────────────────────────────
+function isOutOfBounds(val: unknown, min: number, max: number): boolean {
+  if (val === '' || val === undefined || val === null) return false;
+  const n = Number(val);
+  return isNaN(n) || n < min || n > max;
+}
+
 function Step7({ answer, onChange, ro }: { answer?: A7; onChange: (v: A7) => void; ro?: boolean }) {
   const a: A7 = answer ?? { height: '', weight: '', goal_weight: '' };
 
@@ -373,6 +401,10 @@ function Step7({ answer, onChange, ro }: { answer?: A7; onChange: (v: A7) => voi
     const num = val === '' ? '' : parseFloat(val);
     onChange({ ...a, [field]: num, skipped: false });
   }
+
+  const heightErr = !a.skipped && isOutOfBounds(a.height, 120, 220);
+  const weightErr = !a.skipped && isOutOfBounds(a.weight, 30, 250);
+  const goalErr   = !a.skipped && isOutOfBounds(a.goal_weight, 30, 250);
 
   if (a.skipped && !ro) {
     return (
@@ -400,17 +432,23 @@ function Step7({ answer, onChange, ro }: { answer?: A7; onChange: (v: A7) => voi
           <div className="field">
             <label>Рост (см)</label>
             <input type="number" value={a.height} min={120} max={220} placeholder="170" disabled={ro}
+              style={{ borderColor: heightErr ? 'var(--stop)' : undefined }}
               onChange={e => handleField('height', e.target.value)} />
+            {heightErr && <div style={{ color: 'var(--stop)', fontSize: 12, marginTop: 4 }}>120–220 см</div>}
           </div>
           <div className="field">
             <label>Вес (кг)</label>
             <input type="number" value={a.weight} min={30} max={250} placeholder="70" disabled={ro}
+              style={{ borderColor: weightErr ? 'var(--stop)' : undefined }}
               onChange={e => handleField('weight', e.target.value)} />
+            {weightErr && <div style={{ color: 'var(--stop)', fontSize: 12, marginTop: 4 }}>30–250 кг</div>}
           </div>
           <div className="field">
             <label>Желаемый вес (кг, необязательно)</label>
             <input type="number" value={a.goal_weight ?? ''} min={30} max={250} placeholder="60" disabled={ro}
+              style={{ borderColor: goalErr ? 'var(--stop)' : undefined }}
               onChange={e => handleField('goal_weight', e.target.value)} />
+            {goalErr && <div style={{ color: 'var(--stop)', fontSize: 12, marginTop: 4 }}>30–250 кг</div>}
           </div>
           {bmi > 0 && (
             <div className="bmi-badge">
@@ -455,7 +493,7 @@ function Step7({ answer, onChange, ro }: { answer?: A7; onChange: (v: A7) => voi
   );
 }
 
-// ─── Step 8: Опыт ─────────────────────────────────────────────────────────────
+// ─── Step 8 (UI 9): Опыт ──────────────────────────────────────────────────────
 function Step8({ answer, onChange, ro }: { answer?: A8; onChange: (v: A8) => void; ro?: boolean }) {
   const a: A8 = answer ?? { selected: [] };
   function toggle(id: string) {
@@ -502,7 +540,7 @@ function Step8({ answer, onChange, ro }: { answer?: A8; onChange: (v: A8) => voi
   );
 }
 
-// ─── Step 9: Время и старт ────────────────────────────────────────────────────
+// ─── Step 9 (UI 10): Время и старт ────────────────────────────────────────────
 function Step9({ answer, onChange, ro }: { answer?: A9; onChange: (v: A9) => void; ro?: boolean }) {
   const a: A9 = answer ?? { selected: [] };
   function toggle(id: string) {
@@ -535,7 +573,7 @@ function Step9({ answer, onChange, ro }: { answer?: A9; onChange: (v: A9) => voi
   );
 }
 
-// ─── Step 10: Мотивация и решение ─────────────────────────────────────────────
+// ─── Step 10 (UI 11): Мотивация и решение ──────────────────────────────────────
 function Step10({ answer, onChange, ro }: { answer?: A10; onChange: (v: A10) => void; ro?: boolean }) {
   const a: A10 = answer ?? { value: 0 };
   return (
@@ -560,7 +598,7 @@ function Step10({ answer, onChange, ro }: { answer?: A10; onChange: (v: A10) => 
   );
 }
 
-// ─── Step 11: Откуда узнали ───────────────────────────────────────────────────
+// ─── Step 11 (UI 12): Откуда узнали ───────────────────────────────────────────
 function Step11({ answer, onChange, ro }: { answer?: A11; onChange: (v: A11) => void; ro?: boolean }) {
   const a: A11 = answer ?? { value: '' };
   function toggleCaught(id: string) {
@@ -602,7 +640,7 @@ function Step11({ answer, onChange, ro }: { answer?: A11; onChange: (v: A11) => 
   );
 }
 
-// ─── Step 12: Итог звонка ─────────────────────────────────────────────────────
+// ─── Step 12 (UI 13): Итог звонка ──────────────────────────────────────────────
 function Step12({ answer, onChange, ro }: { answer?: A12; onChange: (v: A12) => void; ro?: boolean }) {
   const a: A12 = answer ?? { outcome: '' };
   return (
@@ -666,48 +704,64 @@ function Step12({ answer, onChange, ro }: { answer?: A12; onChange: (v: A12) => 
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 function canProceed(step: number, answers: Answers): boolean {
-  const a = answers[step] as Record<string, unknown> | undefined;
   switch (step) {
-    case 1:  return !!(a as A1 | undefined)?.travel_time || !!(a as any)?.value;
+    case 1: {
+      const c = answers[0] as A0 | undefined;
+      return !!(c?.name?.trim() && c?.phone && normalizePhone(c.phone) !== null);
+    }
     case 2: {
-      const c = a as A2 | undefined;
+      const a = answers[1] as A1 | undefined;
+      return !!(a?.travel_time ?? (a as any)?.value);
+    }
+    case 3: {
+      const c = answers[2] as A2 | undefined;
       if (!c?.value) return false;
       if (c.postpartum && !c.postpartum_period) return false;
       return true;
     }
-    case 3: {
-      const c = a as A3 | undefined;
+    case 4: {
+      const c = answers[3] as A3 | undefined;
       return !!(c?.none || (c?.selected?.length ?? 0) > 0);
     }
-    case 4:  return !!((a as A4 | undefined)?.selected?.length ?? 0);
-    case 5:  return true; // optional
-    case 6: {
-      const c = a as A6 | undefined;
+    case 5: return !!((answers[4] as A4 | undefined)?.selected?.length ?? 0);
+    case 6: return true; // why_now optional
+    case 7: {
+      const c = answers[6] as A6 | undefined;
       return !!(c?.type && (c.type === 'none' || c.date));
     }
-    case 7: {
-      const c = a as A7 | undefined;
-      return !!(c?.skipped || (c?.height && c?.weight));
+    case 8: {
+      // optional: "Далее" always active unless entered value is out of bounds
+      const c = answers[7] as A7 | undefined;
+      if (!c || c.skipped) return true;
+      if (isOutOfBounds(c.height, 120, 220)) return false;
+      if (isOutOfBounds(c.weight, 30, 250)) return false;
+      if (isOutOfBounds(c.goal_weight, 30, 250)) return false;
+      return true;
     }
-    case 8:  return !!((a as A8 | undefined)?.selected?.length ?? 0);
-    case 9:  return !!(a as A9 | undefined)?.start_when;
-    case 10: return !!((a as A10 | undefined)?.value ?? 0);
-    case 11: return !!(a as A11 | undefined)?.value;
-    case 12: return !!(a as A12 | undefined)?.outcome;
+    case 9:  return !!((answers[8] as A8 | undefined)?.selected?.length ?? 0);
+    case 10: return !!(answers[9] as A9 | undefined)?.start_when;
+    case 11: return !!((answers[10] as A10 | undefined)?.value ?? 0);
+    case 12: return !!(answers[11] as A11 | undefined)?.value;
+    case 13: return !!(answers[12] as A12 | undefined)?.outcome;
     default: return true;
   }
 }
 
 // ─── Single-select keyboard mapping ──────────────────────────────────────────
 const SINGLE_SELECT: Record<number, { id: string }[]> = {
-  1: TRAVEL_TIMES,
-  2: AGE_GROUPS,
-  6: TIMING_OPTIONS,
-  9: START_WHEN,
-  11: SOURCES,
+  2:  TRAVEL_TIMES,
+  3:  AGE_GROUPS,
+  7:  TIMING_OPTIONS,
+  10: START_WHEN,
+  12: SOURCES,
 };
 
 // ─── Main component ───────────────────────────────────────────────────────────
+interface SessionMeta {
+  id: string; status: string; completed_at?: string; created_at: string;
+  temperature?: string; consultant: string;
+}
+
 export default function QuizPage() {
   const { id, step } = useParams<{ id: string; step: string }>();
   const [searchParams] = useSearchParams();
@@ -723,6 +777,7 @@ export default function QuizPage() {
   const [showExit, setShowExit] = useState(false);
   const [leftOpen, setLeftOpen] = useState(false);
   const [copiedFitbase, setCopiedFitbase] = useState(false);
+  const [dupWarn, setDupWarn] = useState('');
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -740,12 +795,40 @@ export default function QuizPage() {
 
   const readOnly = session?.status === 'done';
 
+  // Duplicate phone check on step 1
+  const phone0 = (answers[0] as A0 | undefined)?.phone ?? '';
+  useEffect(() => {
+    if (stepNum !== 1 || readOnly) { setDupWarn(''); return; }
+    const norm = normalizePhone(phone0);
+    if (!norm) { setDupWarn(''); return; }
+    const timer = setTimeout(async () => {
+      const data: SessionMeta[] = await apiGet(`/api/sessions?phone=${encodeURIComponent(norm)}`);
+      const others = data.filter(s => s.id !== id && s.status === 'done');
+      if (others.length) {
+        const d = others[0];
+        const dateStr = new Date(d.completed_at ?? d.created_at).toLocaleDateString('ru-RU');
+        const temp = TEMP_BADGES[d.temperature ?? ''] ?? '';
+        setDupWarn(`Этот клиент уже квалифицирован: ${dateStr}${temp ? ', ' + temp : ''}, ${d.consultant}`);
+      } else {
+        setDupWarn('');
+      }
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [stepNum, phone0, readOnly, id]);
+
   function autoSave(newAnswers: Answers) {
     if (readOnly) return;
     if (saveTimer.current) clearTimeout(saveTimer.current);
     saveTimer.current = setTimeout(async () => {
       setSaving(true);
-      await apiPatch(`/api/sessions/${id}`, { answers: newAnswers, current_step: stepNum });
+      const patch: Record<string, unknown> = { answers: newAnswers, current_step: stepNum };
+      if (stepNum === 1) {
+        const a0 = newAnswers[0] as A0 | undefined;
+        const normPhone = a0?.phone ? normalizePhone(a0.phone) : null;
+        if (a0?.name?.trim()) patch.client_name = a0.name.trim().replace(/^\S/, c => c.toUpperCase());
+        if (normPhone) patch.client_phone = normPhone;
+      }
+      await apiPatch(`/api/sessions/${id}`, patch);
       setSaving(false);
       setSavedAt(new Date());
     }, 500);
@@ -753,15 +836,19 @@ export default function QuizPage() {
 
   function update(value: unknown) {
     if (readOnly) return;
-    const next = { ...answers, [stepNum]: value };
+    const next = { ...answers, [stepNum - 1]: value };
     setAnswers(next);
     autoSave(next);
   }
 
-  function markScript(scriptId: string) {
+  function markScript(scriptId: string, mergedIds?: string[]) {
     if (readOnly) return;
+    const ids = mergedIds ?? [scriptId];
     const current = answers.used_scripts ?? [];
-    const next = current.includes(scriptId) ? current.filter(s => s !== scriptId) : [...current, scriptId];
+    const anyUsed = ids.some(id => current.includes(id));
+    const next = anyUsed
+      ? current.filter(id => !ids.includes(id))
+      : [...new Set([...current, ...ids])];
     const newAnswers = { ...answers, used_scripts: next };
     setAnswers(newAnswers);
     autoSave(newAnswers);
@@ -780,7 +867,7 @@ export default function QuizPage() {
 
   function goNext() {
     if (!readOnly && !canProceed(stepNum, answers)) return;
-    if (fromSummary || stepNum === 12) navigate(`/q/${id}/summary`);
+    if (fromSummary || stepNum === 13) navigate(`/q/${id}/summary`);
     else navigate(`/q/${id}/${stepNum + 1}`);
   }
 
@@ -794,7 +881,6 @@ export default function QuizPage() {
     if (!id) return;
     const newAnswers = { ...answers, closed_early: { reason, comment, at_step: stepNum } };
     const result = computeResult(newAnswers);
-    // Save answers first, then complete
     await apiPatch(`/api/sessions/${id}`, { answers: newAnswers });
     await apiPost(`/api/sessions/${id}/complete`, {
       score: result.score, temperature: result.temperature,
@@ -819,7 +905,7 @@ export default function QuizPage() {
       if (isNaN(n) || n < 1) return;
       const opts = SINGLE_SELECT[stepNum];
       if (opts && n <= opts.length) update({ value: opts[n - 1].id });
-      if (stepNum === 10 && n >= 1 && n <= 9) update({ ...(answers[10] as A10 ?? { value: 0 }), value: n });
+      if (stepNum === 11 && n >= 1 && n <= 9) update({ ...(answers[10] as A10 ?? { value: 0 }), value: n });
     }
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -827,7 +913,7 @@ export default function QuizPage() {
 
   const proceed = readOnly || canProceed(stepNum, answers);
   const isSkippable = STEP_CONFIG[stepNum - 1]?.skippable;
-  const isSkipped = stepNum === 7 && !!(answers[7] as A7 | undefined)?.skipped;
+  const isSkipped = stepNum === 8 && !!(answers[7] as A7 | undefined)?.skipped;
   const usedScripts = answers.used_scripts ?? [];
   const result = computeResult(answers);
 
@@ -835,22 +921,36 @@ export default function QuizPage() {
     update({ skipped: true, height: '', weight: '', goal_weight: '' } as A7);
   }
 
+  const stepCards = getStepCards(stepNum, answers);
+
   const stepContent = (
     <div className="step-enter">
-      {stepNum === 1  && <Step1  answer={answers[1]  as A1}  onChange={update} ro={readOnly} />}
-      {stepNum === 2  && <Step2  answer={answers[2]  as A2}  onChange={update} ro={readOnly} />}
-      {stepNum === 3  && <Step3  answer={answers[3]  as A3}  onChange={update} ro={readOnly} />}
-      {stepNum === 4  && <Step4  answer={answers[4]  as A4}  onChange={update} ro={readOnly} />}
-      {stepNum === 5  && <Step5  answer={answers[5]  as A5}  onChange={update} ro={readOnly} />}
-      {stepNum === 6  && <Step6  answer={answers[6]  as A6}  onChange={update} ro={readOnly} />}
-      {stepNum === 7  && <Step7  answer={answers[7]  as A7}  onChange={update} ro={readOnly} />}
-      {stepNum === 8  && <Step8  answer={answers[8]  as A8}  onChange={update} ro={readOnly} />}
-      {stepNum === 9  && <Step9  answer={answers[9]  as A9}  onChange={update} ro={readOnly} />}
-      {stepNum === 10 && <Step10 answer={answers[10] as A10} onChange={update} ro={readOnly} />}
-      {stepNum === 11 && <Step11 answer={answers[11] as A11} onChange={update} ro={readOnly} />}
-      {stepNum === 12 && <Step12 answer={answers[12] as A12} onChange={update} ro={readOnly} />}
-      {!readOnly && (
-        <StepScripts step={stepNum} answers={answers} usedScripts={usedScripts} onMark={markScript} />
+      {stepNum === 1  && <StepClient answer={answers[0]  as A0}  onChange={update} ro={readOnly} dupWarn={dupWarn} />}
+      {stepNum === 2  && <Step1  answer={answers[1]  as A1}  onChange={update} ro={readOnly} />}
+      {stepNum === 3  && <Step2  answer={answers[2]  as A2}  onChange={update} ro={readOnly} />}
+      {stepNum === 4  && <Step3  answer={answers[3]  as A3}  onChange={update} ro={readOnly} />}
+      {stepNum === 5  && <Step4  answer={answers[4]  as A4}  onChange={update} ro={readOnly} />}
+      {stepNum === 6  && <Step5  answer={answers[5]  as A5}  onChange={update} ro={readOnly} />}
+      {stepNum === 7  && <Step6  answer={answers[6]  as A6}  onChange={update} ro={readOnly} />}
+      {stepNum === 8  && <Step7  answer={answers[7]  as A7}  onChange={update} ro={readOnly} />}
+      {stepNum === 9  && <Step8  answer={answers[8]  as A8}  onChange={update} ro={readOnly} />}
+      {stepNum === 10 && <Step9  answer={answers[9]  as A9}  onChange={update} ro={readOnly} />}
+      {stepNum === 11 && <Step10 answer={answers[10] as A10} onChange={update} ro={readOnly} />}
+      {stepNum === 12 && <Step11 answer={answers[11] as A11} onChange={update} ro={readOnly} />}
+      {stepNum === 13 && <Step12 answer={answers[12] as A12} onChange={update} ro={readOnly} />}
+      {!readOnly && stepCards.length > 0 && (
+        <div className="scripts-card">
+          <h4>💬 Что сказать</h4>
+          {stepCards.map(s => {
+            const isUsed = s.mergedIds
+              ? s.mergedIds.some(mid => usedScripts.includes(mid))
+              : usedScripts.includes(s.id);
+            return (
+              <ScriptItem key={s.id} script={s} answers={answers}
+                used={isUsed} onMark={markScript} />
+            );
+          })}
+        </div>
       )}
     </div>
   );
@@ -868,13 +968,13 @@ export default function QuizPage() {
             <button className="btn btn-secondary" onClick={skip} style={{ color: '#9ca3af' }}>Пропустить</button>
           )}
           <button className="btn btn-primary" disabled={!proceed} onClick={goNext}>
-            {stepNum === 12 || fromSummary ? 'Завершить →' : 'Далее →'}
+            {stepNum === 13 || fromSummary ? 'Завершить →' : 'Далее →'}
           </button>
         </>
       ) : (
         <>
           <button className="btn btn-secondary" onClick={goBack}>← Назад</button>
-          {stepNum < 12 && (
+          {stepNum < 13 && (
             <button className="btn btn-secondary" onClick={() => navigate(`/q/${id}/${stepNum + 1}`)}>
               Вперёд →
             </button>
@@ -890,12 +990,17 @@ export default function QuizPage() {
       <AskPanel step={stepNum} answers={answers} onToggle={toggleAsked} readOnly={readOnly} />
       <div className="col-panel" style={{ marginTop: 0 }}>
         <h4>💬 Что сказать</h4>
-        {SCRIPTS.filter(s => s.step === stepNum && (!s.when || s.when(answers))).length === 0
+        {stepCards.length === 0
           ? <p style={{ color: '#9ca3af', fontSize: 13 }}>Нет подсказок</p>
-          : SCRIPTS.filter(s => s.step === stepNum && (!s.when || s.when(answers))).map(s => (
-            <ScriptItem key={s.id} script={s} answers={answers}
-              used={usedScripts.includes(s.id)} onMark={markScript} readOnly={readOnly} />
-          ))
+          : stepCards.map(s => {
+              const isUsed = s.mergedIds
+                ? s.mergedIds.some(mid => usedScripts.includes(mid))
+                : usedScripts.includes(s.id);
+              return (
+                <ScriptItem key={s.id} script={s} answers={answers}
+                  used={isUsed} onMark={markScript} readOnly={readOnly} />
+              );
+            })
         }
       </div>
     </>
@@ -904,7 +1009,7 @@ export default function QuizPage() {
   return (
     <div className="quiz-layout">
       {/* Left column — desktop */}
-      <div className={`col-left`}>
+      <div className="col-left">
         {leftPanel}
       </div>
 
@@ -921,7 +1026,6 @@ export default function QuizPage() {
       {/* Center column */}
       <div className="col-center">
         <div style={{ padding: '0 0 12px' }}>
-          {/* Tablet questions toggle */}
           <button className="questions-toggle-btn" onClick={() => setLeftOpen(true)}>
             ❓ Вопросы
           </button>
@@ -937,9 +1041,8 @@ export default function QuizPage() {
           {!saving && savedAt && <div className="save-indicator">Сохранено</div>}
 
           <h2 style={{ fontSize: 22, fontWeight: 700, marginBottom: 4 }}>{STEP_TITLES[stepNum - 1]}</h2>
-          <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 8 }}>Шаг {stepNum} из 12</p>
+          <p style={{ color: '#9ca3af', fontSize: 13, marginBottom: 8 }}>Шаг {stepNum} из 13</p>
 
-          {/* Mobile accordion for questions */}
           <details className="mobile-accordion">
             <summary>❓ Вопросы и подсказки <span>▾</span></summary>
             <div className="accordion-body">{leftPanel}</div>

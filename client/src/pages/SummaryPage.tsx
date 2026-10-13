@@ -6,7 +6,7 @@ import {
   TRAVEL_TIMES, AGE_GROUPS, POSTPARTUM_PERIODS, CONTRAINDICATIONS, GOALS,
   WHY_NOW, TIMING_OPTIONS, EXPERIENCE, TIME_SLOTS, START_WHEN,
   DECISION, SOURCES, CALL_OUTCOMES, REFUSAL_REASONS, EARLY_CLOSE_REASONS,
-  A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, Answers,
+  A0, A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, A11, A12, Answers,
   computeResult, buildSummaryText,
 } from '../config/qualify';
 import { SCRIPTS } from '../config/scripts';
@@ -26,22 +26,30 @@ const TEMP_SCRIPT_IDS: Record<string, string[]> = {
   postpone: ['s3_temp'],
 };
 
+// step here is UI step (1–13); answer is at answers[step-1]
 function getAnswerLabel(step: number, answers: Answers): string {
-  const a = answers[step];
+  const a = answers[step - 1];
   if (!a) return '—';
   switch (step) {
     case 1: {
+      const c = a as A0;
+      const parts: string[] = [];
+      if (c.name) parts.push(c.name);
+      if (c.phone) parts.push(c.phone);
+      return parts.join(', ') || '—';
+    }
+    case 2: {
       const c = a as A1;
       return TRAVEL_TIMES.find(d => d.id === (c.travel_time ?? c.value))?.label ?? '—';
     }
-    case 2: {
+    case 3: {
       const c = a as A2;
       const age = AGE_GROUPS.find(g => g.id === c.value)?.label ?? '—';
       if (!c.postpartum) return `${c.gender === 'male' ? 'М, ' : ''}${age}`;
       const period = POSTPARTUM_PERIODS.find(p => p.id === c.postpartum_period)?.label ?? '';
       return `${age}, после родов${period ? ': ' + period : ''}${c.breastfeeding ? ', ГВ' : ''}`;
     }
-    case 3: {
+    case 4: {
       const c = a as A3;
       if (c.none) return 'Противопоказаний нет';
       const all = [...CONTRAINDICATIONS.stop, ...CONTRAINDICATIONS.temporary, ...CONTRAINDICATIONS.attention];
@@ -49,49 +57,49 @@ function getAnswerLabel(step: number, answers: Answers): string {
       if (c.other) labels.push(c.other);
       return labels.join(', ') || '—';
     }
-    case 4: {
+    case 5: {
       const g = a as A4;
       const labels = GOALS.filter(x => g.selected.includes(x.id)).map(x => x.label);
       if (g.other) labels.push(g.other);
       if (g.goal_words) labels.push(`«${g.goal_words}»`);
       return labels.join(', ') || '—';
     }
-    case 5: {
+    case 6: {
       const w = a as A5;
       const labels = WHY_NOW.filter(x => (w.selected ?? []).includes(x.id)).map(x => x.label);
       if (w.other) labels.push(w.other);
       return labels.join(', ') || '—';
     }
-    case 6: {
+    case 7: {
       const t = a as A6;
       const opt = TIMING_OPTIONS.find(o => o.id === t.type)?.label ?? '—';
       if (t.type !== 'none' && t.date) return `${opt}: ${new Date(t.date).toLocaleDateString('ru-RU')}`;
       return opt;
     }
-    case 7: {
+    case 8: {
       const p = a as A7;
-      if (p.skipped) return 'Не указаны';
+      if (p.skipped || (!p.height && !p.weight)) return 'Не указаны';
       return `${p.height} см, ${p.weight} кг${p.goal_weight ? `, цель ${p.goal_weight} кг` : ''}`;
     }
-    case 8: {
+    case 9: {
       const e = a as A8;
       const labels = EXPERIENCE.filter(x => (e.selected ?? []).includes(x.id)).map(x => x.label);
       if (e.what_failed) labels.push(`(${e.what_failed})`);
       return labels.join(', ') || '—';
     }
-    case 9: {
+    case 10: {
       const t = a as A9;
       const slots = TIME_SLOTS.filter(x => (t.selected ?? []).includes(x.id)).map(x => x.label);
       const start = START_WHEN.find(s => s.id === t.start_when)?.label;
       return [...slots, start ? `Старт: ${start}` : ''].filter(Boolean).join(', ') || '—';
     }
-    case 10: {
+    case 11: {
       const m = a as A10;
       const dec = DECISION.find(d => d.id === m.decision)?.label;
       return `${m.value}/10${dec ? `, ${dec}` : ''}`;
     }
-    case 11: return SOURCES.find(s => s.id === (a as A11).value)?.label ?? '—';
-    case 12: {
+    case 12: return SOURCES.find(s => s.id === (a as A11).value)?.label ?? '—';
+    case 13: {
       const o = a as A12;
       const label = CALL_OUTCOMES.find(x => x.id === o.outcome)?.label ?? '—';
       if (o.outcome === 'booked' && o.visit_date) return `${label}: ${o.visit_date}`;
@@ -123,11 +131,12 @@ export default function SummaryPage() {
   const answers = session.answers ?? {};
   const result = computeResult(answers);
   const summaryText = buildSummaryText(answers, result);
-  const a4 = answers[4] as A4 | undefined;
-  const a6 = answers[6] as A6 | undefined;
-  const a7 = answers[7] as A7 | undefined;
+  const a0  = answers[0]  as A0  | undefined;
+  const a4  = answers[4]  as A4  | undefined;
+  const a6  = answers[6]  as A6  | undefined;
+  const a7  = answers[7]  as A7  | undefined;
   const a12 = answers[12] as A12 | undefined;
-  const paramsSkipped = !!a7?.skipped;
+  const paramsSkipped = !a7 || !!a7.skipped || (!a7.height && !a7.weight);
   const readOnly = session.status === 'done';
   const color = TEMP_COLORS[result.temperature] ?? '#6b7280';
   const usedScripts = answers.used_scripts ?? [];
@@ -164,10 +173,14 @@ export default function SummaryPage() {
     navigate('/');
   }
 
-  async function markScript(scriptId: string) {
+  async function markScript(scriptId: string, mergedIds?: string[]) {
     if (readOnly) return;
+    const ids = mergedIds ?? [scriptId];
     const current = answers.used_scripts ?? [];
-    const next = current.includes(scriptId) ? current.filter(s => s !== scriptId) : [...current, scriptId];
+    const anyUsed = ids.some(id => current.includes(id));
+    const next = anyUsed
+      ? current.filter(id => !ids.includes(id))
+      : [...new Set([...current, ...ids])];
     const newAnswers = { ...answers, used_scripts: next };
     setSession(prev => prev ? { ...prev, answers: newAnswers } : prev);
     await apiPatch(`/api/sessions/${id}`, { answers: newAnswers });
@@ -184,6 +197,13 @@ export default function SummaryPage() {
 
       {readOnly && (
         <div className="readonly-banner">🔒 Просмотр — изменения недоступны</div>
+      )}
+
+      {(a0?.name || a0?.phone) && (
+        <div className="summary-section" style={{ paddingBottom: 8 }}>
+          {a0.name && <div style={{ fontWeight: 700, fontSize: 16 }}>{a0.name}</div>}
+          {a0.phone && <div style={{ fontSize: 14, color: '#6b7280' }}>{a0.phone}</div>}
+        </div>
       )}
 
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
@@ -227,10 +247,15 @@ export default function SummaryPage() {
       {!readOnly && closingScripts.length > 0 && (
         <div className="summary-section" style={{ borderLeft: `4px solid ${color}` }}>
           <h3>💬 Что сказать сейчас</h3>
-          {closingScripts.map(s => (
-            <ScriptItem key={s.id} script={s} answers={answers}
-              used={usedScripts.includes(s.id)} onMark={markScript} />
-          ))}
+          {closingScripts.map(s => {
+            const isUsed = s.mergedIds
+              ? s.mergedIds.some(mid => usedScripts.includes(mid))
+              : usedScripts.includes(s.id);
+            return (
+              <ScriptItem key={s.id} script={s} answers={answers}
+                used={isUsed} onMark={markScript} />
+            );
+          })}
         </div>
       )}
 
@@ -304,7 +329,7 @@ export default function SummaryPage() {
 
       <div className="summary-section">
         <h3>Все ответы</h3>
-        {Array.from({ length: 12 }, (_, i) => i + 1).map(n => (
+        {Array.from({ length: 13 }, (_, i) => i + 1).map(n => (
           <div key={n} className="summary-row">
             <span className="label">{STEP_TITLES[n - 1]}</span>
             <span className="value" style={{ maxWidth: '55%' }}>{getAnswerLabel(n, answers)}</span>

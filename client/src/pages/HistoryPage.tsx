@@ -6,6 +6,7 @@ import { TEMP_BADGES, TEMP_COLORS, EARLY_CLOSE_REASONS } from '../config/qualify
 interface Session {
   id: string; consultant: string; status: string;
   temperature?: string; score?: number; created_at: string; completed_at?: string;
+  client_name?: string; client_phone?: string;
   answers?: { closed_early?: { reason: string; comment?: string } };
 }
 
@@ -21,7 +22,7 @@ const TEMPERATURES = [
 export default function HistoryPage() {
   const navigate = useNavigate();
   const [all, setAll] = useState<Session[]>([]);
-  const [filters, setFilters] = useState({ from: '', to: '', temperature: '', consultant: '' });
+  const [filters, setFilters] = useState({ from: '', to: '', temperature: '', consultant: '', search: '' });
 
   useEffect(() => { load(); }, []);
 
@@ -31,6 +32,7 @@ export default function HistoryPage() {
     if (filters.to) params.set('to', filters.to);
     if (filters.temperature) params.set('temperature', filters.temperature);
     if (filters.consultant) params.set('consultant', filters.consultant);
+    if (filters.search) params.set('search', filters.search);
     const data = await apiGet(`/api/sessions?${params}`);
     setAll(data);
   }
@@ -59,6 +61,8 @@ export default function HistoryPage() {
         </select>
         <input type="text" value={filters.consultant} onChange={e => set('consultant', e.target.value)}
           placeholder="Консультант" style={{ width: 140 }} />
+        <input type="text" value={filters.search} onChange={e => set('search', e.target.value)}
+          placeholder="Имя или телефон" style={{ width: 160 }} />
       </div>
 
       <div style={{ color: '#9ca3af', fontSize: 13, marginBottom: 12 }}>
@@ -72,9 +76,11 @@ export default function HistoryPage() {
               {s.temperature && (
                 <span className="temp-dot" style={{ background: TEMP_COLORS[s.temperature] }} />
               )}
-              <span style={{ fontWeight: 600 }}>{s.consultant}</span>
+              <span style={{ fontWeight: 600 }}>{s.client_name ?? 'Без имени'}</span>
               <span style={{ fontSize: 13, color: '#9ca3af' }}>{s.status === 'draft' ? 'черновик' : ''}</span>
             </div>
+            <div className="meta" style={{ color: '#6b7280', fontSize: 13 }}>{s.consultant}</div>
+            {s.client_phone && <div style={{ fontSize: 12, color: '#9ca3af' }}>{s.client_phone}</div>}
             <div className="meta">
               {fmtDate(s.completed_at ?? s.created_at)}
               {s.temperature && ` · ${TEMP_BADGES[s.temperature]}`}

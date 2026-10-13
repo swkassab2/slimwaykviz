@@ -6,16 +6,17 @@ export const MAX_SCORE = 15; // 3+1+3+1+3+3+1
 
 // ─── Step metadata ────────────────────────────────────────────────────────────
 export const STEP_TITLES = [
-  'Где живёт', 'О клиенте', 'Противопоказания', 'Что хочет убрать',
+  'Клиент', 'Где живёт', 'О клиенте', 'Противопоказания', 'Что хочет убрать',
   'Почему сейчас', 'Сроки', 'Параметры и образ жизни', 'Опыт',
   'Время и старт', 'Мотивация и решение', 'Откуда узнали', 'Итог звонка',
 ];
 
 export const STEP_CONFIG: { skippable?: boolean }[] = [
-  {}, {}, {}, {}, {}, {}, { skippable: true }, {}, {}, {}, {}, {},
+  {}, {}, {}, {}, {}, {}, {}, { skippable: true }, {}, {}, {}, {}, {},
 ];
 
 export const STEP_ASK: string[][] = [
+  ['Как к вам можно обращаться?', 'Подскажите номер, на который удобно звонить и писать в WhatsApp?'],
   ['Вы в каком районе живёте или работаете?', 'Удобнее приезжать из дома или с работы?', 'Как будете добираться — на машине или общественным транспортом?'],
   ['Подскажите, сколько вам лет? Это нужно, чтобы правильно подобрать нагрузку', 'Были ли роды за последний год?', 'Сейчас кормите грудью?'],
   ['Есть ли хронические заболевания или то, с чем врач просил быть осторожнее?', 'Принимаете постоянно какие-то препараты? Например, разжижающие кровь', 'Были ли операции за последние 3 месяца?', 'Как с давлением, сердцем?', 'Беспокоят колени, спина, вены?'],
@@ -285,6 +286,8 @@ export const GOAL_EQUIPMENT: Record<string, string[]> = {
 };
 
 // ─── Answer types ─────────────────────────────────────────────────────────────
+export type A0 = { name: string; phone: string };
+
 export type A1 = {
   travel_time: string;
   district?: string;
@@ -465,6 +468,7 @@ export function computeResult(answers: Answers) {
 
 // ─── Build summary text ───────────────────────────────────────────────────────
 export function buildSummaryText(answers: Answers, result: ReturnType<typeof computeResult>): string {
+  const a0  = answers[0]  as A0  | undefined;
   const a2  = answers[2]  as A2  | undefined;
   const a3  = answers[3]  as A3  | undefined;
   const a4  = answers[4]  as A4  | undefined;
@@ -481,7 +485,11 @@ export function buildSummaryText(answers: Answers, result: ReturnType<typeof com
 
   const lines: string[] = [];
 
-  // Call outcome first
+  // Client info first
+  if (a0?.name) lines.push(`Клиент: ${a0.name}`);
+  if (a0?.phone) lines.push(`Телефон: ${a0.phone}`);
+
+  // Call outcome
   if (a12?.outcome) {
     const outLabel = CALL_OUTCOMES.find(o => o.id === a12.outcome)?.label ?? a12.outcome;
     let outLine = `Итог звонка: ${outLabel}`;
@@ -513,7 +521,7 @@ export function buildSummaryText(answers: Answers, result: ReturnType<typeof com
     lines.push(`Срок: до ${d} (${result.weeks_left} нед, ~${result.sessions_min}–${result.sessions_possible} сеансов)`);
   }
 
-  if (a7?.skipped) lines.push('Параметры: не указаны');
+  if (!a7 || a7.skipped || (!a7.height && !a7.weight)) lines.push('Рост/вес: не указаны');
   else if (result.bmi) {
     const goalDiff = a7?.goal_weight && a7?.weight ? Number(a7.weight) - Number(a7.goal_weight) : null;
     lines.push(`ИМТ: ${result.bmi}` + (goalDiff && goalDiff > 0 ? `, цель: −${goalDiff} кг` : ''));

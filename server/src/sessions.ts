@@ -8,6 +8,21 @@ function sb() {
   return createClient(url, key);
 }
 
+function normalizePhone(raw: string): string | null {
+  let digits = raw.replace(/\D/g, '');
+  if (digits.length === 11 && digits[0] === '8') digits = '7' + digits.slice(1);
+  if (digits.length === 11 && digits[0] === '7') return '+' + digits;
+  return null;
+}
+
+export function buildFitbasePayload(session: Record<string, unknown>) {
+  return {
+    name: (session.client_name as string) || '',
+    phone: (session.client_phone as string) || '',
+    comment: (session.summary_text as string) || '',
+  };
+}
+
 export const sessionsRouter = Router();
 
 sessionsRouter.post('/api/sessions', async (req, res) => {
@@ -34,6 +49,11 @@ sessionsRouter.get('/api/sessions', async (req, res) => {
   if (req.query.consultant) q = q.ilike('consultant', `%${req.query.consultant}%`);
   if (req.query.from) q = q.gte('created_at', req.query.from as string);
   if (req.query.to) q = q.lte('created_at', (req.query.to as string) + 'T23:59:59');
+  if (req.query.phone) q = q.eq('client_phone', req.query.phone as string);
+  if (req.query.search) {
+    const s = req.query.search as string;
+    q = (q as any).or(`client_name.ilike.%${s}%,client_phone.ilike.%${s}%`);
+  }
   const { data, error } = await q;
   if (error) { res.status(500).json({ error: error.message }); return; }
   res.json(data);
@@ -55,6 +75,16 @@ sessionsRouter.patch('/api/sessions/:id', async (req, res) => {
   const update: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (req.body.answers !== undefined) update.answers = req.body.answers;
   if (req.body.current_step !== undefined) update.current_step = req.body.current_step;
+  if (req.body.client_name !== undefined) {
+    const name = String(req.body.client_name).trim();
+    if (!name) { res.status(400).json({ error: 'client_name cannot be empty' }); return; }
+    update.client_name = name.charAt(0).toUpperCase() + name.slice(1);
+  }
+  if (req.body.client_phone !== undefined) {
+    const phone = normalizePhone(String(req.body.client_phone));
+    if (!phone) { res.status(400).json({ error: 'Проверьте номер' }); return; }
+    update.client_phone = phone;
+  }
   const { data, error } = await db
     .from('qualify_sessions').update(update).eq('id', req.params.id).select().single();
   if (error) { res.status(500).json({ error: error.message }); return; }

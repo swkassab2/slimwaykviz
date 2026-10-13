@@ -6,7 +6,7 @@ import ScriptItem from './ScriptItem';
 const PANEL_CATS = ['Открытие', 'Возражения', 'Закрытие'];
 
 export default function QuickReplies({ answers, usedScripts, onMark }: {
-  answers: Answers; usedScripts: string[]; onMark: (id: string) => void;
+  answers: Answers; usedScripts: string[]; onMark: (id: string, mergedIds?: string[]) => void;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
