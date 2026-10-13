@@ -1,39 +1,37 @@
 import { useEffect, useState } from 'react';
+import { Routes, Route, Navigate, useNavigate } from 'react-router-dom';
+import LoginPage from './pages/LoginPage';
+import HomePage from './pages/HomePage';
+import QuizPage from './pages/QuizPage';
+import SummaryPage from './pages/SummaryPage';
+import HistoryPage from './pages/HistoryPage';
+// SummaryPage is used for /q/:id/summary
+import './index.css';
 
-type HealthState =
-  | { status: 'loading' }
-  | { status: 'ok'; time: string }
-  | { status: 'error'; error: string };
-
-export default function App() {
-  const [health, setHealth] = useState<HealthState>({ status: 'loading' });
+function RequireAuth({ children }: { children: React.ReactNode }) {
+  const navigate = useNavigate();
+  const [ok, setOk] = useState<boolean | null>(null);
 
   useEffect(() => {
-    fetch('/api/health')
-      .then((r) => r.json())
-      .then((data) => {
-        if (data.ok) setHealth({ status: 'ok', time: data.time });
-        else setHealth({ status: 'error', error: data.error ?? 'Unknown error' });
-      })
-      .catch((e) => setHealth({ status: 'error', error: String(e) }));
-  }, []);
+    fetch('/api/me', { credentials: 'include' })
+      .then(r => r.json())
+      .then(d => { if (d.authed) setOk(true); else navigate('/login', { replace: true }); })
+      .catch(() => navigate('/login', { replace: true }));
+  }, [navigate]);
 
+  if (ok === null) return null;
+  return <>{children}</>;
+}
+
+export default function App() {
   return (
-    <div style={{ fontFamily: 'sans-serif', maxWidth: 480, margin: '60px auto', padding: '0 16px' }}>
-      <h1>SlimWay · Квалификация</h1>
-      {health.status === 'loading' && (
-        <p style={{ color: '#888' }}>Проверяем соединение…</p>
-      )}
-      {health.status === 'ok' && (
-        <div style={{ background: '#d4edda', color: '#155724', padding: '12px 16px', borderRadius: 6 }}>
-          Сервер и Supabase подключены
-        </div>
-      )}
-      {health.status === 'error' && (
-        <div style={{ background: '#f8d7da', color: '#721c24', padding: '12px 16px', borderRadius: 6 }}>
-          {health.error}
-        </div>
-      )}
-    </div>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/" element={<RequireAuth><HomePage /></RequireAuth>} />
+      <Route path="/q/:id/summary" element={<RequireAuth><SummaryPage /></RequireAuth>} />
+      <Route path="/q/:id/:step" element={<RequireAuth><QuizPage /></RequireAuth>} />
+      <Route path="/history" element={<RequireAuth><HistoryPage /></RequireAuth>} />
+      <Route path="*" element={<Navigate to="/" replace />} />
+    </Routes>
   );
 }
