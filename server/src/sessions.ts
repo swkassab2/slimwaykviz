@@ -54,7 +54,7 @@ sessionsRouter.patch('/api/sessions/:id', async (req, res) => {
   if (req.body.answers !== undefined) update.answers = req.body.answers;
   if (req.body.current_step !== undefined) update.current_step = req.body.current_step;
   const { data, error } = await db
-    .from('qualify_sessions').update(update).eq('id', req.params.id).eq('status', 'draft').select().single();
+    .from('qualify_sessions').update(update).eq('id', req.params.id).select().single();
   if (error) { res.status(500).json({ error: error.message }); return; }
   res.json(data);
 });
@@ -63,10 +63,13 @@ sessionsRouter.post('/api/sessions/:id/complete', async (req, res) => {
   const db = sb();
   if (!db) { res.status(500).json({ error: 'Supabase not configured' }); return; }
   const { score, temperature, bmi, weeks_left, sessions_possible, recommendation, summary_text } = req.body;
+  // Preserve completed_at if already done
+  const { data: curr } = await db.from('qualify_sessions').select('status, completed_at').eq('id', req.params.id).single();
+  const completedAt = curr?.status === 'done' ? curr.completed_at : new Date().toISOString();
   const { data, error } = await db
     .from('qualify_sessions')
     .update({ status: 'done', score, temperature, bmi, weeks_left, sessions_possible, recommendation, summary_text,
-      completed_at: new Date().toISOString(), updated_at: new Date().toISOString() })
+      completed_at: completedAt, updated_at: new Date().toISOString() })
     .eq('id', req.params.id).select().single();
   if (error) { res.status(500).json({ error: error.message }); return; }
   res.json(data);

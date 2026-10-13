@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { apiGet, apiPost } from '../api';
 import {
   TEMP_BADGES, TEMP_COLORS, TEMP_TIPS, STEP_TITLES,
@@ -42,6 +42,7 @@ function getAnswerLabel(step: number, answers: Answers): string {
     }
     case 6: {
       const p = a as A6;
+      if (p.skipped) return 'Не указаны';
       return `${p.height} см, ${p.weight} кг${p.goal_weight ? `, цель ${p.goal_weight} кг` : ''}`;
     }
     case 7: {
@@ -60,38 +61,37 @@ function getAnswerLabel(step: number, answers: Answers): string {
 export default function SummaryPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const [session, setSession] = useState<Session | null>(null);
   const [copied, setCopied] = useState(false);
-  const [completing, setCompleting] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [savedOk, setSavedOk] = useState(false);
 
+  // Re-fetch whenever we return to this page (e.g., after editing a step)
   useEffect(() => {
     if (!id) return;
     apiGet(`/api/sessions/${id}`).then(setSession);
-  }, [id]);
+  }, [id, location.key]);
 
   if (!session) return <div className="page">Загрузка…</div>;
 
   const answers = session.answers ?? {};
-  // Use saved values if done, otherwise compute fresh
-  const result = session.status === 'done' && session.temperature
-    ? {
-        score: session.score ?? 0,
-        temperature: session.temperature,
-        bmi: session.bmi ?? 0,
-        weeks_left: (answers[5] as A5 | undefined)?.date
-          ? Math.max(0, Math.floor((new Date((answers[5] as A5).date!).getTime() - Date.now()) / (7 * 24 * 60 * 60 * 1000)))
-          : 0,
-        sessions_possible: 0,
-        recommendation: (session as unknown as { recommendation?: string[] }).recommendation ?? [],
-        flags: computeResult(answers).flags,
-      }
-    : computeResult(answers);
-
+  // Always compute fresh so edits are reflected immediately
+  const result = computeResult(answers);
   const summaryText = buildSummaryText(answers, result);
   const a5 = answers[5] as A5 | undefined;
+  const a6 = answers[6] as A6 | undefined;
+  const paramsSkipped = !!a6?.skipped;
+  const isDone = session.status === 'done';
+  const color = TEMP_COLORS[result.temperature] ?? '#6b7280';
 
   function editStep(n: number) {
     navigate(`/q/${id}/${n}?back=summary`);
+  }
+
+  function goBack() {
+    if (location.key !== 'default') navigate(-1);
+    else navigate('/');
   }
 
   async function copyToClipboard() {
@@ -101,7 +101,7 @@ export default function SummaryPage() {
   }
 
   async function complete() {
-    setCompleting(true);
+    setSaving(true);
     await apiPost(`/api/sessions/${id}/complete`, {
       score: result.score,
       temperature: result.temperature,
@@ -111,14 +111,25 @@ export default function SummaryPage() {
       recommendation: result.recommendation,
       summary_text: summaryText,
     });
-    navigate('/');
+    setSaving(false);
+    if (isDone) {
+      setSavedOk(true);
+      setTimeout(() => setSavedOk(false), 2000);
+    } else {
+      navigate('/');
+    }
   }
-
-  const color = TEMP_COLORS[result.temperature] ?? '#6b7280';
-  const isDone = session.status === 'done';
 
   return (
     <div className="page">
+      {/* Header with back button */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <button className="btn btn-secondary" style={{ padding: '8px 14px', fontSize: 13 }} onClick={goBack}>
+          ← Назад
+        </button>
+        <span style={{ color: '#9ca3af', fontSize: 14 }}>{session.consultant}</span>
+      </div>
+
       {/* Badge */}
       <div style={{ textAlign: 'center', marginBottom: 24 }}>
         <div className="badge" style={{ background: color, fontSize: 24 }}>
@@ -159,22 +170,24 @@ export default function SummaryPage() {
         </div>
       )}
 
-      {/* BMI */}
-      {result.bmi > 0 && (
-        <div className="summary-section">
-          <h3>Параметры</h3>
-          {(() => {
-            const a6 = answers[6] as A6 | undefined;
-            const diff = a6?.goal_weight && a6?.weight ? Number(a6.weight) - Number(a6.goal_weight) : null;
-            return (
-              <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
-                <Stat label="ИМТ" value={String(result.bmi)} />
-                {diff && diff > 0 && <Stat label="Цель" value={`−${diff} кг`} />}
-              </div>
-            );
-          })()}
-        </div>
-      )}
+      {/* Params / BMI */}
+      <div className="summary-section">
+        <h3>Параметры</h3>
+        {paramsSkipped
+          ? <p style={{ color: '#9ca3af', fontSize: 14, marginTop: 4 }}>Не указаны</p>
+          : result.bmi > 0
+            ? (() => {
+                const diff = a6?.goal_weight && a6?.weight ? Number(a6.weight) - Number(a6.goal_weight) : null;
+                return (
+                  <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                    <Stat label="ИМТ" value={String(result.bmi)} />
+                    {diff && diff > 0 && <Stat label="Цель" value={`−${diff} кг`} />}
+                  </div>
+                );
+              })()
+            : <p style={{ color: '#9ca3af', fontSize: 14, marginTop: 4 }}>Не заполнены</p>
+        }
+      </div>
 
       {/* Flags */}
       {result.flags.length > 0 && (
@@ -186,16 +199,14 @@ export default function SummaryPage() {
         </div>
       )}
 
-      {/* All answers */}
+      {/* All answers — always editable */}
       <div className="summary-section">
         <h3>Все ответы</h3>
         {Array.from({ length: 10 }, (_, i) => i + 1).map(n => (
           <div key={n} className="summary-row">
             <span className="label">{STEP_TITLES[n - 1]}</span>
-            <span className="value" style={{ maxWidth: '60%' }}>{getAnswerLabel(n, answers)}</span>
-            {!isDone && (
-              <button className="edit-link" onClick={() => editStep(n)}>изменить</button>
-            )}
+            <span className="value" style={{ maxWidth: '55%' }}>{getAnswerLabel(n, answers)}</span>
+            <button className="edit-link" onClick={() => editStep(n)}>изменить</button>
           </div>
         ))}
       </div>
@@ -205,13 +216,11 @@ export default function SummaryPage() {
         <button className="btn btn-outline" onClick={copyToClipboard}>
           {copied ? '✓ Скопировано!' : 'Скопировать для Fitbase'}
         </button>
-        {!isDone && (
-          <button className="btn btn-primary" disabled={completing} onClick={complete}>
-            {completing ? 'Сохраняем…' : 'Завершить квалификацию'}
-          </button>
-        )}
+        <button className="btn btn-primary" disabled={saving} onClick={complete}>
+          {saving ? 'Сохраняем…' : savedOk ? '✓ Сохранено' : isDone ? 'Сохранить изменения' : 'Завершить квалификацию'}
+        </button>
         <button className="btn btn-secondary" onClick={() => navigate('/')}>
-          {isDone ? '← Главная' : 'Новая квалификация'}
+          {isDone ? '← Главная' : 'Главная'}
         </button>
       </div>
     </div>

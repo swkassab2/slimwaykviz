@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { apiGet, apiPatch } from '../api';
 import {
-  STEP_TITLES, DISTANCES, AGE_GROUPS, CONTRAINDICATIONS, GOALS, TIMING_OPTIONS,
+  STEP_TITLES, STEP_CONFIG, DISTANCES, AGE_GROUPS, CONTRAINDICATIONS, GOALS, TIMING_OPTIONS,
   EXPERIENCE, TIME_SLOTS, SOURCES, SESSIONS_PER_WEEK,
   A1, A2, A3, A4, A5, A6, A7, A8, A9, A10, Answers,
 } from '../config/qualify';
@@ -202,30 +202,53 @@ function Step6({ answer, onChange }: { answer?: A6; onChange: (v: A6) => void })
   const a: A6 = answer ?? { height: '', weight: '', goal_weight: '' };
 
   let bmi = 0;
-  if (a.height && a.weight) {
+  if (!a.skipped && a.height && a.weight) {
     const h = Number(a.height) / 100;
     bmi = Math.round((Number(a.weight) / (h * h)) * 10) / 10;
   }
-  const goalDiff = a.goal_weight && a.weight && Number(a.goal_weight) > 0
+  const goalDiff = !a.skipped && a.goal_weight && a.weight && Number(a.goal_weight) > 0
     ? Number(a.weight) - Number(a.goal_weight)
     : null;
+
+  function handleField(field: keyof A6, val: string) {
+    const num = val === '' ? '' : parseFloat(val);
+    onChange({ ...a, [field]: num, skipped: false });
+  }
+
+  if (a.skipped) {
+    return (
+      <div className="alert alert-info" style={{ marginTop: 16 }}>
+        Параметры пропущены. Введите данные ниже чтобы заполнить.
+        <div className="field" style={{ marginTop: 12 }}>
+          <label>Рост (см)</label>
+          <input type="number" min={120} max={220} placeholder="170"
+            onChange={e => handleField('height', e.target.value)} />
+        </div>
+        <div className="field" style={{ marginTop: 8 }}>
+          <label>Вес (кг)</label>
+          <input type="number" min={30} max={250} placeholder="70"
+            onChange={e => handleField('weight', e.target.value)} />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>
       <div className="field">
         <label>Рост (см)</label>
         <input type="number" value={a.height} min={120} max={220} placeholder="170"
-          onChange={e => onChange({ ...a, height: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
+          onChange={e => handleField('height', e.target.value)} />
       </div>
       <div className="field">
         <label>Вес (кг)</label>
         <input type="number" value={a.weight} min={30} max={250} placeholder="70"
-          onChange={e => onChange({ ...a, weight: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
+          onChange={e => handleField('weight', e.target.value)} />
       </div>
       <div className="field">
         <label>Желаемый вес (кг, необязательно)</label>
         <input type="number" value={a.goal_weight ?? ''} min={30} max={250} placeholder="60"
-          onChange={e => onChange({ ...a, goal_weight: e.target.value === '' ? '' : parseFloat(e.target.value) })} />
+          onChange={e => handleField('goal_weight', e.target.value)} />
       </div>
       {bmi > 0 && (
         <div className="bmi-badge">
@@ -333,7 +356,7 @@ function canProceed(step: number, answers: Answers): boolean {
     }
     case 6: {
       const c = a as A6 | undefined;
-      return !!(c?.height && c?.weight);
+      return !!(c?.skipped || (c?.height && c?.weight));
     }
     case 7: return !!((a as A7 | undefined)?.selected?.length ?? 0);
     case 8: return !!((a as A8 | undefined)?.selected?.length ?? 0);
@@ -422,6 +445,12 @@ export default function QuizPage() {
   }, [stepNum, answers]);
 
   const proceed = canProceed(stepNum, answers);
+  const isSkippable = STEP_CONFIG[stepNum - 1]?.skippable;
+  const isSkipped = stepNum === 6 && !!(answers[6] as A6 | undefined)?.skipped;
+
+  function skip() {
+    update({ skipped: true, height: '', weight: '', goal_weight: '' } as A6);
+  }
 
   return (
     <div className="page">
@@ -448,8 +477,13 @@ export default function QuizPage() {
 
       <div className="nav-btns">
         <button className="btn btn-secondary" onClick={goBack}>
-          {fromSummary ? 'К итогу' : stepNum === 1 ? 'Главная' : 'Назад'}
+          {fromSummary ? '← К результату' : stepNum === 1 ? 'Главная' : 'Назад'}
         </button>
+        {isSkippable && !isSkipped && (
+          <button className="btn btn-secondary" onClick={skip} style={{ color: '#9ca3af' }}>
+            Пропустить
+          </button>
+        )}
         <button className="btn btn-primary" disabled={!proceed} onClick={goNext}>
           {stepNum === 10 || fromSummary ? 'Итог →' : 'Далее →'}
         </button>

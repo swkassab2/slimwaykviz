@@ -80,6 +80,20 @@ export const SOURCES = [
   { id: 'other',     label: 'Другое' },
 ];
 
+// Per-step config flags
+export const STEP_CONFIG: { skippable?: boolean }[] = [
+  {},              // 1 distance
+  {},              // 2 age
+  {},              // 3 contraindications
+  {},              // 4 goals
+  {},              // 5 timing
+  { skippable: true }, // 6 params
+  {},              // 7 experience
+  {},              // 8 time slots
+  {},              // 9 motivation
+  {},              // 10 source
+];
+
 export const STEP_TITLES = [
   'Далеко ли живёт',
   'Возраст',
@@ -133,7 +147,7 @@ export type A2 = { value: string };
 export type A3 = { selected: string[]; none: boolean; other: string };
 export type A4 = { selected: string[]; other: string };
 export type A5 = { type: string; date?: string };
-export type A6 = { height: number | ''; weight: number | ''; goal_weight?: number | '' };
+export type A6 = { height: number | ''; weight: number | ''; goal_weight?: number | ''; skipped?: boolean };
 export type A7 = { selected: string[]; what_failed: string };
 export type A8 = { selected: string[] };
 export type A9 = { value: number };
@@ -235,7 +249,9 @@ export function buildSummaryText(answers: Answers, result: ReturnType<typeof com
     lines.push(`Срок: до ${d} (${result.weeks_left} нед, ~${result.sessions_possible} сеансов)`);
   }
 
-  if (result.bmi) {
+  if (a6?.skipped) {
+    lines.push('Параметры: не указаны');
+  } else if (result.bmi) {
     const goalDiff = a6?.goal_weight && a6?.weight ? Number(a6.weight) - Number(a6.goal_weight) : null;
     lines.push(`ИМТ: ${result.bmi}` + (goalDiff && goalDiff > 0 ? `, цель: −${goalDiff} кг` : ''));
   }
